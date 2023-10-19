@@ -8,7 +8,8 @@ from scipy.spatial.transform import Rotation as R
 from utils.rotamer import rotate_side_chain
 from torch_cluster import radius_graph
 from utils import rotamer
-
+import copy
+import pdb
 NUM_CHI_ANGLES = 4
 
 def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_max, 
@@ -62,6 +63,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
         new_data_list = []
 
         for complex_graph_batch in loader:
+            # pdb.set_trace()
             b = complex_graph_batch.num_graphs
             complex_graph_batch = complex_graph_batch.to(device)
             batch_index = complex_graph_batch['atom'].batch # [num_atoms]
@@ -72,22 +74,25 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                 protein.atom2residue[batch_index == i] += offset
                 offset += protein.num_residue[i]
             # causal sidechain mask
-            protein.num_residue = sum(protein.num_residue) # handle batch
+            # protein.num_residue = sum(protein.num_residue) # handle batch, but there is only one sample and this operation will result in problem with splitting batch
+            # protein.num_nodes = protein.num_residue # fix the bug with batching num_nodes property
             tr_sigma, rot_sigma, tor_sigma, chi_sigma = t_to_sigma(t_tr, t_rot, t_tor, t_chi)
             set_time(complex_graph_batch, t_tr, t_rot, t_tor, t_chi, b, model_args.all_atoms, device)
             
             with torch.no_grad():
                 # tr_score, rot_score, tor_score, chi_score = model(complex_graph_batch)
                 for chi_id in range(NUM_CHI_ANGLES):
-                    chis = rotamer.get_chis(protein, protein.node_position)
+                    chis = rotamer.get_chis(protein, protein.node_position) # all chi angles including currently unchanged angles
                     # predict score for each chi angle, tr, rot and tor score will also be predicted autoregressively
-                    protein = rotamer.romove_by_chi(protein, chi_id)
-                    tr_score, rot_score, tor_score, chi_pred = model(complex_graph_batch)
-                    chi_score = chi_pred[0]
-
+                    #NOTE: in My implementation remove_by_chi will modify the complex_graph_batch directly for avoiding deep copy in training
+                    chi_protein_bacth = copy.deepcopy(complex_graph_batch)
+                    chi_protein_batch = rotamer.remove_by_chi(chi_protein_bacth, chi_id)
+                    chi_protein_batch.chi_id = chi_id
+                    tr_score, rot_score, tor_score, chi_score = model.predict(chi_protein_batch, sampling=True)
+                    # chi_score = chi_pred[0]
                     # step backward for chi angle and predict next chi. It could be noisy but I have no choise
-                    chis = model.so2_periodic[0].step(chis, chi_score, t_chi, dt_chi, protein.chi_1pi_periodic_mask)
-                    chis = model.so2_periodic[1].step(chis, chi_score, t_chi, dt_chi, protein.chi_2pi_periodic_mask)
+                    chis = model.so2_periodic[0].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_1pi_periodic_mask)
+                    chis = model.so2_periodic[1].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_2pi_periodic_mask)
                     protein = rotamer.set_chis(protein, chis)
                     # Modify the complex graph according to protein dict
                     complex_graph_batch['atom'].pos = protein.node_position
@@ -124,6 +129,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                 tor_perturb = None
 
             # Apply noise
+            # pdb.set_trace()
             new_data_list.extend([modify_conformer(complex_graph, tr_perturb[i:i + 1], rot_perturb[i:i + 1].squeeze(0),
                                           tor_perturb[i * torsions_per_molecule:(i + 1) * torsions_per_molecule] if not model_args.no_torsion else None)
                          for i, complex_graph in enumerate(complex_graph_batch.to('cpu').to_data_list())])

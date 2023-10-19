@@ -118,8 +118,8 @@ class PDBBind(Dataset):
         self.all_atoms = all_atoms
         self.atom_radius, self.atom_max_neighbors = atom_radius, atom_max_neighbors
         # pdb.set_trace()
-        if not os.path.exists(os.path.join(self.full_cache_path, "heterographs_debug.pkl"))\
-                or (require_ligand and not os.path.exists(os.path.join(self.full_cache_path, "rdkit_ligands_debug.pkl"))):
+        if not os.path.exists(os.path.join(self.full_cache_path, "heterographs.pkl"))\
+                or (require_ligand and not os.path.exists(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"))):
             os.makedirs(self.full_cache_path, exist_ok=True)
             if protein_path_list is None or ligand_descriptions is None:
                 self.preprocessing()

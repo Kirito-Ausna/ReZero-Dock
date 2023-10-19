@@ -12,7 +12,6 @@ from utils.diffusion_utils import get_t_schedule
 from torch_scatter import scatter_mean
 from utils import rotamer
 from utils.rotamer import atom_name_vocab, _get_symm_atoms, _rmsd_per_residue
-import pdb
 
 NUM_CHI_ANGLES = 4
 
@@ -26,16 +25,18 @@ def loss_function(tr_pred, rot_pred, tor_pred, chi_pred, data, t_to_sigma, devic
     # translation component
     tr_score = torch.cat([d.tr_score for d in data], dim=0) if device.type == 'cuda' else data.tr_score
     tr_sigma = tr_sigma.unsqueeze(-1)
-    tr_loss = ((tr_pred.cpu() - tr_score) ** 2 * tr_sigma ** 2).mean(dim=mean_dims)
+    tr_loss = ((tr_pred.cpu() - tr_score) ** 2 * tr_sigma ** 2)
+    # set nan in tr_loss to 0
+    tr_loss[torch.isnan(tr_loss)] = torch.zeros(1, dtype=torch.float)
+    tr_loss = tr_loss.mean(dim=mean_dims)
     tr_base_loss = (tr_score ** 2 * tr_sigma ** 2).mean(dim=mean_dims).detach()
-    # if tr_loss.mean() > 100:
-    #     pdb.set_trace()
     # rotation component
     rot_score = torch.cat([d.rot_score for d in data], dim=0) if device.type == 'cuda' else data.rot_score
     rot_score_norm = so3.score_norm(rot_sigma.cpu()).unsqueeze(-1)
-    rot_loss = (((rot_pred.cpu() - rot_score) / rot_score_norm) ** 2).mean(dim=mean_dims)
+    rot_loss = (((rot_pred.cpu() - rot_score) / rot_score_norm) ** 2)
+    rot_loss[torch.isnan(rot_loss)] = torch.zeros(1, dtype=torch.float)
+    rot_loss = rot_loss.mean(dim=mean_dims)
     rot_base_loss = ((rot_score / rot_score_norm) ** 2).mean(dim=mean_dims).detach()
-
     # torsion component
     if not no_torsion:
         edge_tor_sigma = torch.from_numpy(
@@ -121,10 +122,10 @@ class AverageMeter():
                             list(self.acc.values())[type_idx][i] / self.count[type_idx][i]).item()
             return out
     
-def train_epoch(model, loader, optimizer, device, t_to_sigma, loss_fn, ema_weigths):
+def train_epoch(model, loader, optimizer, device, t_to_sigma, loss_fn, ema_weights):
     model.train()
     meter = AverageMeter(['loss', 'tr_loss', 'rot_loss', 'tor_loss', 'chi_loss', 'tr_base_loss', 'rot_base_loss', 'tor_base_loss', 'chi_base_loss'])
-
+    
     for data in tqdm(loader, total=len(loader)):
         if device.type == 'cuda' and len(data) == 1 or device.type == 'cpu' and data.num_graphs == 1:
             print("Skipping batch of size 1 since otherwise batchnorm would not work.")
@@ -134,10 +135,11 @@ def train_epoch(model, loader, optimizer, device, t_to_sigma, loss_fn, ema_weigt
             loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
                 loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, device=device)
             loss.backward()
+            # gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            ema_weigths.update(model.parameters())
+            ema_weights.update(model.parameters())
             meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
-        # pdb.set_trace()
         except RuntimeError as e:
             if 'out of memory' in str(e):
                 print('| WARNING: ran out of memory, skipping batch')
@@ -174,7 +176,7 @@ def test_epoch(model, loader, device, t_to_sigma, loss_fn, test_sigma_intervals=
             with torch.no_grad():
                 # pdb.set_trace()
                 tr_pred, rot_pred, tor_pred, chi_pred = model(data)
-
+                
             loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
                 loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, apply_mean=False, device=device)
             meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
@@ -210,7 +212,7 @@ def test_epoch(model, loader, device, t_to_sigma, loss_fn, test_sigma_intervals=
                 raise e
 
     out = meter.summary()
-    if test_sigma_intervals > 0: out.update(meter_all.summary())
+    # if test_sigma_intervals > 0: out.update(meter_all.summary())
     return out
 
 def get_metric(pred_protein, true_protein, metric):
@@ -219,8 +221,8 @@ def get_metric(pred_protein, true_protein, metric):
     true_pos = true_protein.node_position
     protein = true_protein
 
-    pred_pos_per_residue = torch.zeros(protein.num_residue, len(atom_name_vocab), 3, device=protein.device)
-    true_pos_per_residue = torch.zeros(protein.num_residue, len(atom_name_vocab), 3, device=protein.device)
+    pred_pos_per_residue = torch.zeros(protein.num_residue, len(atom_name_vocab), 3, device=true_pos.device)
+    true_pos_per_residue = torch.zeros(protein.num_residue, len(atom_name_vocab), 3, device=true_pos.device)
     pred_pos_per_residue[protein.atom2residue, protein.atom_name] = pred_pos
     true_pos_per_residue[protein.atom2residue, protein.atom_name] = true_pos
     symm_true_pos_per_residue = _get_symm_atoms(true_pos_per_residue, protein.residue_type)

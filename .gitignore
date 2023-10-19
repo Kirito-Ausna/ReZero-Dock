@@ -170,3 +170,5 @@ data/*
 log/*
 visualizations/*
 workdir/*
+script/*
+datasets/inconsistent_graphs.pkl

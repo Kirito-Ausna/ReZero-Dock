@@ -202,20 +202,21 @@ class SO2VESchedule(SO2Schedule):
         return x, score
 
     @torch.no_grad()
-    def step(self, x, x_score, t, dt, x_mask=None):
+    def step(self, x, x_score, x_sigma, dt, x_mask=None):
         """Denoise step for the input tensor (torsion angles).
 
         Args:
             x (Tensor): Torsion angles of shape :math:`(num_res, 4)`
             x_score (Tensor): Score of shape :math:`(num_res, 4)`
-            t (Tensor): Timesteps of shape :math:`(num_res)`
+            x_sigma (Tensor): Timesteps of shape :math:`(num_res)--> sigma of the Timesteps`
             dt (float): Step size of shape :math:`(num_res)`
             x_mask (Tensor): Mask of shape :math:`(num_res, 4)`
 
         Returns:
             Tensor: Denoised torsion angles of shape :math:`(num_res, 4)`
         """
-        sigma = self.t_to_sigma(t)  # (num_res)
+        # sigma = self.t_to_sigma(t)  # (num_res)
+        sigma = x_sigma
         g = sigma * np.sqrt(2 * np.log(self.sigma_max / self.sigma_min))  # (num_res)
 
         # Temperature Coefficient

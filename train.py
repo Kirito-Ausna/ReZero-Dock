@@ -19,7 +19,6 @@ from utils.parsing import parse_train_args
 from utils.training import train_epoch, test_epoch, loss_function, inference_epoch
 from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, ExponentialMovingAverage
 from utils.so2 import SO2VESchedule
-import pdb
 
 def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir):
     best_val_loss = math.inf
@@ -28,7 +27,6 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
     best_val_inference_epoch = 0
     loss_fn = partial(loss_function, tr_weight=args.tr_weight, rot_weight=args.rot_weight,
                       tor_weight=args.tor_weight, chi_weight=args.chi_weight, no_torsion=args.no_torsion, no_chi_angle=args.no_chi_angle)
-
     print("Starting training...")
     for epoch in range(args.n_epochs):
         if epoch % 5 == 0: print("Run name: ", args.run_name)
@@ -53,17 +51,18 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
                   f"chi_1_mae_deg: {inf_metrics['chi_1_ae_deg'].mean():<20}"
                   f"chi_2_mae_deg: {inf_metrics['chi_2_ae_deg'].mean():<20}"
                   f"chi_3_mae_deg: {inf_metrics['chi_3_ae_deg'].mean():<20}")
-            logs.update({'valinf_' + k: v for k, v in inf_metrics.items()}, step=epoch + 1)
+            logs.update({"val_inference/"+ k: v for k, v in inf_metrics.items()}, step=epoch + 1)
 
         if not args.use_ema: ema_weights.copy_to(model.parameters())
         ema_state_dict = copy.deepcopy(model.module.state_dict() if args.device.type == 'cuda' else model.state_dict())
         ema_weights.restore(model.parameters())
 
         if args.wandb:
-            logs.update({'train_' + k: v for k, v in train_losses.items()})
-            logs.update({'val_' + k: v for k, v in val_losses.items()})
+            logs.update({"train/" + k: v for k, v in train_losses.items()})
+            logs.update({"validation/" + k: v for k, v in val_losses.items()})
             logs['current_lr'] = optimizer.param_groups[0]['lr']
-            wandb.log(logs, step=epoch + 1)
+            # wandb.log(logs, step=epoch + 1)
+            wandb.log(logs, step=epoch) # don't log number of parameters
 
         state_dict = model.module.state_dict() if args.device.type == 'cuda' else model.state_dict()
         if args.inference_earlystop_metric in logs.keys() and \
@@ -99,17 +98,7 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
 def main_function(device):
     args = parse_train_args()
     args.device = device
-    if args.wandb:
-        wandb.init(
-            entity='kirito_asuna',
-            dir=args.log_dir,
-            resume='allow',
-            project=args.project,
-            name=args.run_name,
-            id=args.run_name,
-            config=args
-        )
-        wandb.log({'numel': numel})
+        
     if args.config:
         config_dict = yaml.load(args.config, Loader=yaml.FullLoader)
         arg_dict = args.__dict__
@@ -161,6 +150,18 @@ def main_function(device):
     numel = sum([p.numel() for p in model.parameters()])
     print('Model with', numel, 'parameters')
 
+    if args.wandb:
+        wandb.init(
+            entity='kirito_asuna',
+            dir=args.log_dir,
+            resume='allow',
+            project=args.project,
+            name=args.run_name,
+            id=args.run_name,
+            group=args.group,
+            config=args
+        )
+        # wandb.log({'numel': numel})
     # record parameters
     args.device = args.device.type # just record type of device
     # calculate number of used gpus
@@ -172,7 +173,6 @@ def main_function(device):
     yaml_file_name = os.path.join(run_dir, 'model_parameters.yml')
     save_yaml_file(yaml_file_name, args.__dict__)
     args.device = device # restore device
-
     train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir)
 
 

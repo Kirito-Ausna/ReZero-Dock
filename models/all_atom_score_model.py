@@ -195,15 +195,17 @@ class TensorProductScoreModel(torch.nn.Module):
                 score (torch.Tensor): [num_residue, 4] score
         """
         # pdb.set_trace()
-        batch_index = data['atom'].batch # [num_atoms]
         protein = data['sidechain']
         # calculate the offset of each protein
-        offset = 0
-        for i in range(data.num_graphs):
-            protein.atom2residue[batch_index == i] += offset
-            offset += protein.num_residue[i]
-        # causal sidechain mask
-        protein.num_residue = sum(protein.num_residue) # handle batch
+        if data.num_graphs > 1:
+            offset = 0
+            batch_index = data['atom'].batch # [num_atoms]
+            for i in range(data.num_graphs):
+                protein.atom2residue[batch_index == i] += offset
+                offset += protein.num_residue[i]
+            # causal sidechain mask
+            protein.num_residue = sum(protein.num_residue) # handle batch, but will result in the problem when spliting the batch 
+
         if chi_id is not None:
             # pdb.set_trace()
             data = rotamer.remove_by_chi(data, chi_id) # new protein, change with iteration. data['sidechain'] is the original protein will remian as orign
@@ -211,6 +213,7 @@ class TensorProductScoreModel(torch.nn.Module):
         chis = rotamer.get_chis(protein, protein.node_position) # [num_residue, 4]
         node_chi_sigma = data['receptor'].node_t['chi']
         # pdb.set_trace()
+        
         chis, chi_score_1pi = self.so2_periodic[0].add_noise(chis, node_chi_sigma, protein.chi_1pi_periodic_mask)
         chis, chi_score_2pi = self.so2_periodic[1].add_noise(chis, node_chi_sigma, protein.chi_2pi_periodic_mask)
         chi_score = torch.where(protein.chi_1pi_periodic_mask, chi_score_1pi, chi_score_2pi)
@@ -227,18 +230,24 @@ class TensorProductScoreModel(torch.nn.Module):
         data['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
 
         return data
-
+    
     def forward(self, data):
+        if not self.no_sidechain:
+            train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
+            data = self.add_chi_noise(data, chi_id=train_chi_id)
+        
+        return self.predict(data)
+
+    def predict(self, data, sampling=False):
+    # def forward(self, data):
         # pdb.set_trace()
         if not self.confidence_mode:
             tr_sigma, rot_sigma, tor_sigma, _ = self.t_to_sigma(*[data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']])
-            if not self.no_sidechain:
-                train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
-                data = self.add_chi_noise(data, chi_id=train_chi_id)
-            # pdb.set_trace()
+            # if not self.no_sidechain:
+            #     train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
+            #     data = self.add_chi_noise(data, chi_id=train_chi_id)
         else:
             tr_sigma, rot_sigma, tor_sigma, _ = [data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']]
-
         # build ligand graph
         lig_node_attr, lig_edge_index, lig_edge_attr, lig_edge_sh = self.build_lig_conv_graph(data)
         # init_lig_node_attr = lig_node_attr
@@ -265,6 +274,7 @@ class TensorProductScoreModel(torch.nn.Module):
 
         for l in range(self.num_conv_layers):
             # LIGAND updates
+            # print("oulaoulaoulaoulaoulaoulaoulaoula6", flush=True)
             lig_edge_attr_ = torch.cat([lig_edge_attr, lig_node_attr[lig_edge_index[0], :self.ns], lig_node_attr[lig_edge_index[1], :self.ns]], -1)
             lig_update = self.conv_layers[9*l](lig_node_attr, lig_edge_index, lig_edge_attr_, lig_edge_sh)
 
@@ -277,7 +287,7 @@ class TensorProductScoreModel(torch.nn.Module):
                                                 out_nodes=lig_node_attr.shape[0])
 
             if l != self.num_conv_layers-1:  # last layer optimisation
-
+                # print("oulaoulaoulaoulaoulaoulaoulaoula7", flush=True)
                 # ATOM UPDATES
                 atom_edge_attr_ = torch.cat([atom_edge_attr, atom_node_attr[atom_edge_index[0], :self.ns], atom_node_attr[atom_edge_index[1], :self.ns]], -1)
                 atom_update = self.conv_layers[9*l+3](atom_node_attr, atom_edge_index, atom_edge_attr_, atom_edge_sh)
@@ -322,6 +332,7 @@ class TensorProductScoreModel(torch.nn.Module):
         center_edge_index, center_edge_attr, center_edge_sh = self.build_center_conv_graph(data)
         center_edge_attr = self.center_edge_embedding(center_edge_attr)
         center_edge_attr = torch.cat([center_edge_attr, lig_node_attr[center_edge_index[1], :self.ns]], -1)
+
         global_pred = self.final_conv(lig_node_attr, center_edge_index, center_edge_attr, center_edge_sh, out_nodes=data.num_graphs)
 
         tr_pred = global_pred[:, :3] + global_pred[:, 6:9]
@@ -340,31 +351,33 @@ class TensorProductScoreModel(torch.nn.Module):
             tr_pred = tr_pred / tr_sigma.unsqueeze(1)
             rot_pred = rot_pred * so3.score_norm(rot_sigma.cpu()).unsqueeze(1).to(data['ligand'].x.device)
 
-        if self.no_torsion or data['ligand'].edge_mask.sum() == 0: return tr_pred, rot_pred, torch.empty(0,device=self.device)
+        # if self.no_torsion or data['ligand'].edge_mask.sum() == 0: return tr_pred, rot_pred, torch.empty(0,device=self.device), torch.empty(0,device=self.device)
+        if not self.no_torsion and data['ligand'].edge_mask.sum() != 0:
+            # torsional components
+            tor_bonds, tor_edge_index, tor_edge_attr, tor_edge_sh = self.build_bond_conv_graph(data)
+            tor_bond_vec = data['ligand'].pos[tor_bonds[1]] - data['ligand'].pos[tor_bonds[0]]
+            tor_bond_attr = lig_node_attr[tor_bonds[0]] + lig_node_attr[tor_bonds[1]]
 
-        # torsional components
-        tor_bonds, tor_edge_index, tor_edge_attr, tor_edge_sh = self.build_bond_conv_graph(data)
-        tor_bond_vec = data['ligand'].pos[tor_bonds[1]] - data['ligand'].pos[tor_bonds[0]]
-        tor_bond_attr = lig_node_attr[tor_bonds[0]] + lig_node_attr[tor_bonds[1]]
+            tor_bonds_sh = o3.spherical_harmonics("2e", tor_bond_vec, normalize=True, normalization='component')
+            tor_edge_sh = self.final_tp_tor(tor_edge_sh, tor_bonds_sh[tor_edge_index[0]])
 
-        tor_bonds_sh = o3.spherical_harmonics("2e", tor_bond_vec, normalize=True, normalization='component')
-        tor_edge_sh = self.final_tp_tor(tor_edge_sh, tor_bonds_sh[tor_edge_index[0]])
+            tor_edge_attr = torch.cat([tor_edge_attr, lig_node_attr[tor_edge_index[1], :self.ns],
+                                    tor_bond_attr[tor_edge_index[0], :self.ns]], -1)
+            tor_pred = self.tor_bond_conv(lig_node_attr, tor_edge_index, tor_edge_attr, tor_edge_sh,
+                                        out_nodes=data['ligand'].edge_mask.sum(), reduce='mean')
+            tor_pred = self.tor_final_layer(tor_pred).squeeze(1)
+            edge_sigma = tor_sigma[data['ligand'].batch][data['ligand', 'ligand'].edge_index[0]][data['ligand'].edge_mask]
 
-        tor_edge_attr = torch.cat([tor_edge_attr, lig_node_attr[tor_edge_index[1], :self.ns],
-                                   tor_bond_attr[tor_edge_index[0], :self.ns]], -1)
-        tor_pred = self.tor_bond_conv(lig_node_attr, tor_edge_index, tor_edge_attr, tor_edge_sh,
-                                      out_nodes=data['ligand'].edge_mask.sum(), reduce='mean')
-        tor_pred = self.tor_final_layer(tor_pred).squeeze(1)
-        edge_sigma = tor_sigma[data['ligand'].batch][data['ligand', 'ligand'].edge_index[0]][data['ligand'].edge_mask]
-
-        if self.scale_by_sigma:
-            tor_pred = tor_pred * torch.sqrt(torch.tensor(torus.score_norm(edge_sigma.cpu().numpy())).float()
-                                             .to(data['ligand'].x.device))
-        
+            if self.scale_by_sigma:
+                tor_pred = tor_pred * torch.sqrt(torch.tensor(torus.score_norm(edge_sigma.cpu().numpy())).float()
+                                                .to(data['ligand'].x.device))
+        else:
+            tor_pred = torch.empty(0,device=self.device)
         # pdb.set_trace()
         # calculate sidechain score
         if self.no_sidechain:
             return tr_pred, rot_pred, tor_pred, torch.empty(0,device=self.device)
+
         chi_id = data.chi_id
         ar_node_update = scatter_mean(atom_node_attr, data['sidechain'].atom2residue, dim=0, dim_size=data['sidechain'].num_residue)
         chi_node_attr = rec_node_attr + ar_node_update
@@ -377,18 +390,16 @@ class TensorProductScoreModel(torch.nn.Module):
         chi_sigma = chi_sigma.unsqueeze(-1).expand(-1, self.NUM_CHI_ANGLES) # [Num_residues, 4]
         score_norm_1pi = torch.tensor(self.so2_periodic[0].score_norm(chi_sigma), device=chi_sigma.device)
         score_norm_2pi = torch.tensor(self.so2_periodic[1].score_norm(chi_sigma), device=chi_sigma.device)
-        # pdb.set_trace()
-        # print("=====================Shape=====================")
-        # print(data["sidechain"].chi_1pi_periodic_mask.shape, score_norm_1pi.shape, score_norm_2pi.shape)
-        # print("=====================device=====================")
-        # print(data["sidechain"].chi_1pi_periodic_mask.device, score_norm_1pi.device, score_norm_2pi.device)
+
         score_norm = torch.where(data["sidechain"].chi_1pi_periodic_mask, score_norm_1pi, score_norm_2pi)
         chi_pred = chi_pred * torch.sqrt(score_norm)
 
         # Mask out non-related chis
         chi_pred = chi_pred * data['sidechain'].chi_mask.to(chi_pred.dtype)
-        data.chi_score = data.chi_score * data['sidechain'].chi_mask.to(data.chi_score.dtype)
-        return tr_pred, rot_pred, tor_pred, (chi_pred, score_norm, data.chi_score)
+        if not sampling:
+            data.chi_score = data.chi_score * data['sidechain'].chi_mask.to(data.chi_score.dtype)
+            return tr_pred, rot_pred, tor_pred, (chi_pred, score_norm, data.chi_score)
+        return tr_pred, rot_pred, tor_pred, chi_pred
 
     def build_lig_conv_graph(self, data):
         # build the graph between ligand atoms
@@ -433,11 +444,12 @@ class TensorProductScoreModel(torch.nn.Module):
 
     def build_atom_conv_graph(self, data):
         # build the graph between receptor atoms
+        # pdb.set_trace()
         data['atom'].node_sigma_emb = self.timestep_emb_func(data['atom'].node_t['tr'])
         node_attr = torch.cat([data['atom'].x, data['atom'].node_sigma_emb], 1)
 
         # this assumes the edges were already created in preprocessing since protein's structure is fixed
-        # We add noise to sidechain, so actually we rebuild graph in NoiseTransform function.
+        #NOTE: We add noise to sidechain, so actually we rebuild graph in add_noise function.
         edge_index = data['atom', 'atom'].edge_index
         src, dst = edge_index
         edge_vec = data['atom'].pos[dst.long()] - data['atom'].pos[src.long()]
@@ -455,9 +467,12 @@ class TensorProductScoreModel(torch.nn.Module):
         # LIGAND to RECEPTOR
         if torch.is_tensor(lr_cross_distance_cutoff):
             # different cutoff for every graph
+            # try:
             lr_edge_index = radius(data['receptor'].pos / lr_cross_distance_cutoff[data['receptor'].batch],
-                                data['ligand'].pos / lr_cross_distance_cutoff[data['ligand'].batch], 1,
-                                data['receptor'].batch, data['ligand'].batch, max_num_neighbors=10000)
+                                    data['ligand'].pos / lr_cross_distance_cutoff[data['ligand'].batch], 1,
+                                    data['receptor'].batch, data['ligand'].batch, max_num_neighbors=10000)
+            # except:
+            #     pdb.set_trace()
         else:
             lr_edge_index = radius(data['receptor'].pos, data['ligand'].pos, lr_cross_distance_cutoff,
                             data['receptor'].batch, data['ligand'].batch, max_num_neighbors=10000)

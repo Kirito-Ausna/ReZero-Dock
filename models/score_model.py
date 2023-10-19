@@ -11,7 +11,7 @@ from e3nn.nn import BatchNorm
 
 from utils import so3, torus
 from datasets.process_mols import lig_feature_dims, rec_residue_feature_dims
-
+import pdb
 
 class AtomEncoder(torch.nn.Module):
 
@@ -45,6 +45,7 @@ class AtomEncoder(torch.nn.Module):
             x_embedding += self.atom_embedding_list[i](x[:, i].long())
 
         if self.num_scalar_features > 0:
+            # pdb.set_trace()
             x_embedding += self.linear(x[:, self.num_categorical_features:self.num_categorical_features + self.num_scalar_features])
         if self.lm_embedding_type is not None:
             x_embedding = self.lm_embedding_layer(torch.cat([x_embedding, x[:, -self.lm_embedding_dim:]], axis=1))

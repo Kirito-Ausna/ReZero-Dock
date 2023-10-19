@@ -4,6 +4,7 @@ import copy
 import torch
 import pdb
 from datasets.process_mols import safe_index
+from torch_geometric.utils import subgraph
 
 residue_list = [
     "GLY", "ALA", "SER", "PRO", "VAL", "THR", "CYS", "ILE", "LEU", "ASN",
@@ -470,6 +471,11 @@ def sub_atom_graph(data, atom_mask):
     atom_res_edge_index = torch.stack((src_atom_idx, src_c_alpha_idx), dim=0).long()
     # pdb.set_trace()
     data['atom', 'atom_rec_contact', 'receptor'].edge_index = atom_res_edge_index
+    # Update the atom_atom edge_index accorddig to atom mask
+    # pdb.set_trace()
+    atom_edge_index = data['atom', 'atom_contact', 'atom'].edge_index
+    atom_edge_index, _ = subgraph(atom_mask, atom_edge_index, relabel_nodes=True)
+    data['atom', 'atom_contact', 'atom'].edge_index = atom_edge_index
     # data['atom'].src_c_alpha_idx = torch.from_numpy(src_c_alpha_idx)
     # protein = data['sidechain']
     protein.node_position = data['atom'].pos
