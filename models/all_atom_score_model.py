@@ -226,7 +226,7 @@ class TensorProductScoreModel(torch.nn.Module):
         # Modify the complex graph according to protein dict
         data['atom'].pos = protein.node_position
         atom_coords = data['atom'].pos
-        atoms_edge_index = radius_graph(atom_coords, self.atom_radius, max_num_neighbors=self.atom_max_neighbors if self.atom_max_neighbors else 1000)
+        atoms_edge_index = radius_graph(atom_coords, self.atom_radius, data['atom'].batch, max_num_neighbors=self.atom_max_neighbors if self.atom_max_neighbors else 1000)
         data['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
 
         return data

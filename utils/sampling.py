@@ -42,7 +42,7 @@ def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_
             # Modify the complex graph according to protein dict
             complex_graph['atom'].pos = protein.node_position
             atom_coords = protein.node_position
-            atoms_edge_index = radius_graph(atom_coords, atom_radius, 
+            atoms_edge_index = radius_graph(atom_coords, atom_radius,
                                            max_num_neighbors=atom_max_neighbors if atom_max_neighbors else 1000)
             complex_graph['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
             
@@ -97,7 +97,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                     # Modify the complex graph according to protein dict
                     complex_graph_batch['atom'].pos = protein.node_position
                     atom_coords = protein.node_position
-                    atoms_edge_index = radius_graph(atom_coords, model_args.atom_radius,
+                    atoms_edge_index = radius_graph(atom_coords, model_args.atom_radius, complex_graph_batch['atom'].batch,
                                                 max_num_neighbors=model_args.atom_max_neighbors if model_args.atom_max_neighbors else 1000)
                     complex_graph_batch['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index                    
 
