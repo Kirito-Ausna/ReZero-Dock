@@ -16,6 +16,7 @@ from utils.sampling import randomize_position, sampling
 from utils.utils import get_model
 from utils.visualise import PDBFile
 from tqdm import tqdm
+from utils.so2 import SO2VESchedule
 
 RDLogger.DisableLog('rdApp.*')
 import yaml
@@ -35,6 +36,11 @@ parser.add_argument('--ckpt', type=str, default='best_ema_inference_epoch_model.
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
 
+parser.add_argument('pocket_center_x', type=float, default=None, help='X coordinate of the pocket center')
+parser.add_argument('pocket_center_y', type=float, default=None, help='Y coordinate of the pocket center')
+parser.add_argument('pocket_center_z', type=float, default=None, help='Z coordinate of the pocket center')
+
+parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
 parser.add_argument('--batch_size', type=int, default=32, help='')
 parser.add_argument('--no_final_step_noise', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps')
@@ -93,8 +99,14 @@ else:
     confidence_test_dataset = None
 
 t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
-
-model = get_model(score_model_args, device, t_to_sigma=t_to_sigma, no_parallel=True)
+so2_1pi_periodic = SO2VESchedule(pi_periodic=True, cache_folder=score_model_args.diffusion_cache_folder, 
+                                    sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
+                                    annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
+so2_2pi_periodic = SO2VESchedule(pi_periodic=False, cache_folder=score_model_args.diffusion_cache_folder, 
+                                    sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
+                                    annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
+so2_periodic = [so2_1pi_periodic, so2_2pi_periodic]
+model = get_model(score_model_args, device, t_to_sigma=t_to_sigma, no_parallel=True, so2_periodic=so2_periodic)
 state_dict = torch.load(f'{args.model_dir}/{args.ckpt}', map_location=torch.device('cpu'))
 model.load_state_dict(state_dict, strict=True)
 model = model.to(device)
@@ -115,7 +127,7 @@ tr_schedule = get_t_schedule(inference_steps=args.inference_steps)
 failures, skipped = 0, 0
 N = args.samples_per_complex
 print('Size of test dataset: ', len(test_dataset))
-for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
+for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed is 1, because of the randomize_position function
     if not orig_complex_graph.success[0]:
         skipped += 1
         print(f"HAPPENING | The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
@@ -153,7 +165,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)):
                                          tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule,
                                          device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
                                          visualization_list=visualization_list, confidence_model=confidence_model,
-                                         confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
+                                         confidence_data_list=None, confidence_model_args=confidence_args,
                                          batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise)
         ligand_pos = np.asarray([complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
 

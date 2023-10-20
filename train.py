@@ -20,6 +20,7 @@ from utils.training import train_epoch, test_epoch, loss_function, inference_epo
 from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, ExponentialMovingAverage
 from utils.so2 import SO2VESchedule
 
+
 def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir):
     best_val_loss = math.inf
     best_val_inference_value = math.inf if args.inference_earlystop_goal == 'min' else 0
@@ -98,7 +99,7 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
 def main_function(device):
     args = parse_train_args()
     args.device = device
-        
+
     if args.config:
         config_dict = yaml.load(args.config, Loader=yaml.FullLoader)
         arg_dict = args.__dict__

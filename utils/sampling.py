@@ -150,6 +150,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                 if confidence_data_list is not None:
                     confidence_complex_graph_batch = next(confidence_loader).to(device)
                     confidence_complex_graph_batch['ligand'].pos = complex_graph_batch['ligand'].pos
+                    #TODO: Replace the protein sidechain conformation
                     set_time(confidence_complex_graph_batch, 0, 0, 0, N, confidence_model_args.all_atoms, device)
                     confidence.append(confidence_model(confidence_complex_graph_batch))
                 else:

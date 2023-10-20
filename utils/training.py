@@ -256,7 +256,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
     tr_schedule, rot_schedule, tor_schedule, chi_schedule = t_schedule, t_schedule, t_schedule, t_schedule
 
     dataset = ListDataset(complex_graphs)
-    loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False) # Just one by one here, keep in mind in reading next codes
+    loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False) # Just one by one here, keep in mind in reading next codes, hard to change
     rmsds = []
     chi_metric = {}
 

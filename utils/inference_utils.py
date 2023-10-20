@@ -9,7 +9,10 @@ import esm
 
 from datasets.process_mols import parse_pdb_from_path, generate_conformer, read_molecule, get_lig_graph_with_matching, \
     extract_receptor_structure, get_rec_graph
-
+from datasets.process_mols import safe_index
+from utils.rotamer import residue_list, atom_name_vocab, get_chi_mask, bb_atom_name, residue_list_expand
+from utils import rotamer
+import pdb
 
 three_to_one = {'ALA':	'A',
 'ARG':	'R',
@@ -211,9 +214,73 @@ class InferenceDataset(Dataset):
 
     def len(self):
         return len(self.complex_names)
+    
+    # functions for sidechain torsional diffusion
+    def chi_torsion_features(self, complex_graphs, rec):
+        # get residue type and atom name lists [Num_atom] * 2
+        # atom_feat = comlex_graphs['atom'].x
+        # atom_residue_type = atom_feat[:, 0]
+        # NOTE: The index system is different from the one in process_mols.py
+        atom_residue_type = [] # 20-indexed number as AlphaFold [Num_atom,]
+        atom_name = [] # 37-indexed fixed number [Num_atom,]
+        atom2residue = [] # [Num_atom,] convert the atom_residue_type to residue index array [Num_atoms,] like [0,0,...,0,1,1,..1,...]
+        res_index = 0
+        last_residue = None
+        residue_type = []
+        for i, atom in enumerate(rec.get_atoms()):  # NOTE: atom index must be the same as the one in process_mols.py
+            if atom.name not in atom_name_vocab:
+                continue
+            res = atom.get_parent()
+            res_type_check = safe_index(residue_list_expand, res.get_resname())
+            if res_type_check > 20:
+                res_type = 0
+            else:
+                res_type = safe_index(residue_list, res.get_resname()) # make sure it's normal amino acid
+            res_id = res.get_id() # A residue id is a tuple of (hetero-flag, sequence identifier, insertion code)
+            # pdb.set_trace()
+            atom_name.append(atom_name_vocab[atom.name])
+            atom_residue_type.append(res_type)
+            if last_residue is None:
+                last_residue = res_id
+                residue_type.append(res_type)
+            atom2residue.append(res_index)
+            if res_id != last_residue:
+                res_index += 1
+                last_residue = res_id
+                residue_type.append(res_type)
+        protein = complex_graphs['sidechain']
+        # save the rec_coords for usage in add_noise
+        # protein.rec_coords = rec_coords # the rec_coords here include H atoms
+        atom_residue_type = torch.tensor(atom_residue_type)
+        atom_name = torch.tensor(atom_name)
+        # pdb.set_trace()
+        protein.atom14index = rotamer.restype_atom14_index_map[atom_residue_type, atom_name] # [num_atom,]
+        protein.atom_name = atom_name
+        # complex_graphs['receptor'].residue_type = atom_residue_type
+        residue_indexes = complex_graphs['receptor'].x[:,0]
+        protein.num_residue = residue_indexes.shape[0]
+        protein.num_nodes = complex_graphs['receptor'].num_nodes
+        # complex_graphs['sidechain'].num_nodes = complex_graphs['receptor'].num_nodes
+        protein.atom2residue = torch.tensor(atom2residue)
+        protein.residue_type = torch.tensor(residue_type)
+        atom_position = complex_graphs['atom'].pos #NOTE: [num_atom, 3] and the atom index must be the same as the one in process_mols.py
+        protein.node_position = atom_position
+        # Init residue masks
+        chi_mask = get_chi_mask(protein, device=atom_position.device) # [num_residue, 4]
+        # pdb.set_trace()
+        chi_1pi_periodic_mask = torch.tensor(rotamer.chi_pi_periodic)[protein.residue_type]
+        chi_2pi_periodic_mask = ~chi_1pi_periodic_mask
+        protein.chi_mask = chi_mask
+        protein.chi_1pi_periodic_mask = torch.logical_and(chi_mask, chi_1pi_periodic_mask)  # [num_residue, 4]
+        protein.chi_2pi_periodic_mask = torch.logical_and(chi_mask, chi_2pi_periodic_mask)  # [num_residue, 4]
+        # Init atom37 features
+        protein.atom37_mask = torch.zeros(protein.num_residue, len(atom_name_vocab), device=chi_mask.device,
+                                            dtype=torch.bool)  # [num_residue, 37]
+        protein.atom37_mask[protein.atom2residue, protein.atom_name] = True
+        protein.sidechain37_mask = protein.atom37_mask.clone()  # [num_residue, 37]
+        protein.sidechain37_mask[:, bb_atom_name] = False
 
     def get(self, idx):
-
         name, protein_file, ligand_description, lm_embedding = \
             self.complex_names[idx], self.protein_files[idx], self.ligand_descriptions[idx], self.lm_embeddings[idx]
 
@@ -260,7 +327,7 @@ class InferenceDataset(Dataset):
             print(e)
             complex_graph['success'] = False
             return complex_graph
-
+        self.chi_torsion_features(complex_graph, rec)
         protein_center = torch.mean(complex_graph['receptor'].pos, dim=0, keepdim=True)
         complex_graph['receptor'].pos -= protein_center
         if self.all_atoms:
