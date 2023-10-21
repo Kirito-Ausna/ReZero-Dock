@@ -52,7 +52,7 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
                   f"chi_1_mae_deg: {inf_metrics['chi_1_ae_deg'].mean():<20}"
                   f"chi_2_mae_deg: {inf_metrics['chi_2_ae_deg'].mean():<20}"
                   f"chi_3_mae_deg: {inf_metrics['chi_3_ae_deg'].mean():<20}")
-            logs.update({"val_inference/"+ k: v for k, v in inf_metrics.items()}, step=epoch + 1)
+            logs.update({"val_inference/"+ k: v for k, v in inf_metrics.items()}, step=epoch)
             # pdb.set_trace()
         if not args.use_ema: ema_weights.copy_to(model.parameters())
         ema_state_dict = copy.deepcopy(model.module.state_dict() if args.device.type == 'cuda' else model.state_dict())
