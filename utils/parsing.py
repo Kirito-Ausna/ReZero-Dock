@@ -58,7 +58,7 @@ def parse_train_args():
     parser.add_argument('--tr_weight', type=float, default=0.25, help='Weight of translation loss')
     parser.add_argument('--rot_weight', type=float, default=0.25, help='Weight of rotation loss')
     parser.add_argument('--tor_weight', type=float, default=0.25, help='Weight of torsional loss')
-    parser.add_argument('--chi_weight', type=float, default=0.25, help='Weight of sidechain chi angle loss')
+    parser.add_argument('--chi_weight', type=float, default=1.0, help='Weight of sidechain chi angle loss')
     parser.add_argument('--rot_sigma_min', type=float, default=0.1, help='Minimum sigma for rotational component')
     parser.add_argument('--rot_sigma_max', type=float, default=1.65, help='Maximum sigma for rotational component')
     parser.add_argument('--tr_sigma_min', type=float, default=0.1, help='Minimum sigma for translational component')

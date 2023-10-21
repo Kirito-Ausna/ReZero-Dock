@@ -185,7 +185,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
             if score_model_args.remove_hs: mol_pred = RemoveHs(mol_pred)
             if rank == 0: write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}.sdf'))
             write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
-
+        #TODO: save pdb files with predicted sidechain comformations
         # save visualisation frames
         if args.save_visualisation:
             if confidence is not None:

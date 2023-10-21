@@ -12,6 +12,7 @@ from utils.diffusion_utils import get_t_schedule
 from torch_scatter import scatter_mean
 from utils import rotamer
 from utils.rotamer import atom_name_vocab, _get_symm_atoms, _rmsd_per_residue
+import pdb
 
 NUM_CHI_ANGLES = 4
 
@@ -248,6 +249,7 @@ def get_metric(pred_protein, true_protein, metric):
     for i in range(NUM_CHI_ANGLES):
         # metric[f"chi_{i}_ae_rad"] = chi_ae[:, i][protein.chi_mask[:, i]]
         metric[f"chi_{i}_ae_deg"] = chi_ae[:, i][protein.chi_mask[:, i]] * 180 / np.pi
+    # pdb.set_trace()
 
     return metric
 

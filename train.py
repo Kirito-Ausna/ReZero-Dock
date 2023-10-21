@@ -19,7 +19,7 @@ from utils.parsing import parse_train_args
 from utils.training import train_epoch, test_epoch, loss_function, inference_epoch
 from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, ExponentialMovingAverage
 from utils.so2 import SO2VESchedule
-
+import pdb
 
 def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir):
     best_val_loss = math.inf
@@ -53,7 +53,7 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
                   f"chi_2_mae_deg: {inf_metrics['chi_2_ae_deg'].mean():<20}"
                   f"chi_3_mae_deg: {inf_metrics['chi_3_ae_deg'].mean():<20}")
             logs.update({"val_inference/"+ k: v for k, v in inf_metrics.items()}, step=epoch + 1)
-
+            # pdb.set_trace()
         if not args.use_ema: ema_weights.copy_to(model.parameters())
         ema_state_dict = copy.deepcopy(model.module.state_dict() if args.device.type == 'cuda' else model.state_dict())
         ema_weights.restore(model.parameters())
