@@ -18,7 +18,7 @@ def parse_train_args():
     parser.add_argument('--train_inference_freq', type=int, default=None, help='Frequency of epochs for which to run expensive inference on train data')
     parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps for inference on val')
     parser.add_argument('--num_inference_complexes', type=int, default=100, help='Number of complexes for which inference is run every val/train_inference_freq epochs (None will run it on all)')
-    parser.add_argument('--inference_earlystop_metric', type=str, default='valinf_rmsds_lt2', help='This is the metric that is addionally used when val_inference_freq is not None')
+    parser.add_argument('--inference_earlystop_metric', type=str, default='val_inference/rmsds_lt2', help='This is the metric that is addionally used when val_inference_freq is not None')
     parser.add_argument('--inference_earlystop_goal', type=str, default='max', help='Whether to maximize or minimize metric')
     parser.add_argument('--wandb', action='store_true', default=False, help='')
     parser.add_argument('--project', type=str, default='VISUALDOCK', help='')
