@@ -248,8 +248,10 @@ def get_metric(pred_protein, true_protein, metric):
     metric["chi_ae_deg"] = chi_ae[protein.chi_mask] * 180 / np.pi  # [num_residue, 4]
     for i in range(NUM_CHI_ANGLES):
         # metric[f"chi_{i}_ae_rad"] = chi_ae[:, i][protein.chi_mask[:, i]]
-        metric[f"chi_{i}_ae_deg"] = chi_ae[:, i][protein.chi_mask[:, i]] * 180 / np.pi
-    # pdb.set_trace()
+        if protein.chi_mask[:, i].sum() == 0:
+            metric[f"chi_{i}_ae_deg"] = chi_ae.new_tensor([0.0])
+        else:
+            metric[f"chi_{i}_ae_deg"] = chi_ae[:, i][protein.chi_mask[:, i]] * 180 / np.pi
 
     return metric
 
@@ -312,6 +314,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
             chi_metric[k].append(v.mean())
 
 
+    # pdb.set_trace()
     rmsds = np.array(rmsds)
     for k, v in chi_metric.items():
         chi_metric[k] = np.array(v).mean()
