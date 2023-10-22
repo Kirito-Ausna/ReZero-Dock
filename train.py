@@ -21,15 +21,16 @@ from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, 
 from utils.so2 import SO2VESchedule
 
 
-def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir):
+def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir, start_epoch=0):
     best_val_loss = math.inf
     best_val_inference_value = math.inf if args.inference_earlystop_goal == 'min' else 0
     best_epoch = 0
+
     best_val_inference_epoch = 0
     loss_fn = partial(loss_function, tr_weight=args.tr_weight, rot_weight=args.rot_weight,
                       tor_weight=args.tor_weight, chi_weight=args.chi_weight, no_torsion=args.no_torsion, no_chi_angle=args.no_chi_angle)
     print("Starting training...")
-    for epoch in range(args.n_epochs):
+    for epoch in range(start_epoch, args.n_epochs):
         if epoch % 5 == 0: print("Run name: ", args.run_name)
         logs = {}
         train_losses = train_epoch(model, train_loader, optimizer, args.device, t_to_sigma, loss_fn, ema_weights)
@@ -133,7 +134,7 @@ def main_function(device):
     model = get_model(args, args.device, t_to_sigma=t_to_sigma, so2_periodic=so2_periodic)
     optimizer, scheduler = get_optimizer_and_scheduler(args, model, scheduler_mode=args.inference_earlystop_goal if args.val_inference_freq is not None else 'min')
     ema_weights = ExponentialMovingAverage(model.parameters(),decay=args.ema_rate)
-
+    start_epoch = 0 # for resume a training in wandb
     if args.restart_dir:
         try:
             dict = torch.load(f'{args.restart_dir}/last_model.pt', map_location=torch.device('cpu'))
@@ -142,6 +143,7 @@ def main_function(device):
             model.module.load_state_dict(dict['model'], strict=True)
             if hasattr(args, 'ema_rate'):
                 ema_weights.load_state_dict(dict['ema_weights'], device=args.device)
+            start_epoch = dict['epoch']
             print("Restarting from epoch", dict['epoch'])
         except Exception as e:
             print("Exception", e)
@@ -175,7 +177,7 @@ def main_function(device):
     yaml_file_name = os.path.join(run_dir, 'model_parameters.yml')
     save_yaml_file(yaml_file_name, args.__dict__)
     args.device = device # restore device
-    train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir)
+    train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir, start_epoch)
 
 
 if __name__ == '__main__':
