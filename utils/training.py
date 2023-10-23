@@ -12,7 +12,6 @@ from utils.diffusion_utils import get_t_schedule
 from torch_scatter import scatter_mean
 from utils import rotamer
 from utils.rotamer import atom_name_vocab, _get_symm_atoms, _rmsd_per_residue
-import pdb
 
 NUM_CHI_ANGLES = 4
 

@@ -50,3 +50,15 @@ class PDBFile:
             return str_
         with open(path, 'w') as f:
             f.write(str_)
+
+class ModifiedPDB:
+    # implementation for save pdb file with modified pocket sidechain coordinates
+    def __init__(self) -> None:
+        pass
+    def read_file(self):
+        pass
+    def to_pdb(self):
+        pass # mimic process_mols.extract_receptor_structure, 
+             # but change the coordinates of atoms while parsing in the same order of the preprocess. Just need two loops.
+    
+    

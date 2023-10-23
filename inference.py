@@ -14,9 +14,10 @@ from utils.diffusion_utils import t_to_sigma as t_to_sigma_compl, get_t_schedule
 from utils.inference_utils import InferenceDataset, set_nones
 from utils.sampling import randomize_position, sampling
 from utils.utils import get_model
-from utils.visualise import PDBFile
+from utils.visualise import PDBFile, ModifiedPDB
 from tqdm import tqdm
 from utils.so2 import SO2VESchedule
+import pickle
 
 RDLogger.DisableLog('rdApp.*')
 import yaml
@@ -133,7 +134,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
         print(f"HAPPENING | The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
         continue
     try:
-        if confidence_test_dataset is not None:
+        if confidence_test_dataset is not None and args.no_chi_angle:
             confidence_complex_graph = confidence_test_dataset[idx]
             if not confidence_complex_graph.success:
                 skipped += 1
@@ -145,7 +146,9 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
         randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.tr_sigma_max)
         lig = orig_complex_graph.mol[0]
-
+        true_pockect = orig_complex_graph['sidechain']
+        # restore the original pocket center
+        true_pockect.node_position = true_pockect.node_position + orig_complex_graph.original_center
         # initialize visualisation
         pdb = None
         if args.save_visualisation:
@@ -165,10 +168,10 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
                                          tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule,
                                          device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
                                          visualization_list=visualization_list, confidence_model=confidence_model,
-                                         confidence_data_list=None, confidence_model_args=confidence_args,
+                                         confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
                                          batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise)
         ligand_pos = np.asarray([complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
-
+        protein_atom_pos = np.asarray([complex_graph['atom'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
         # reorder predictions based on confidence output
         if confidence is not None and isinstance(confidence_args.rmsd_classification_cutoff, list):
             confidence = confidence[:, 0]
@@ -177,6 +180,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
             re_order = np.argsort(confidence)[::-1]
             confidence = confidence[re_order]
             ligand_pos = ligand_pos[re_order]
+            protein_atom_pos = protein_atom_pos[re_order]
 
         # save predictions
         write_dir = f'{args.out_dir}/{complex_name_list[idx]}'
@@ -186,6 +190,16 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
             if rank == 0: write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}.sdf'))
             write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
         #TODO: save pdb files with predicted sidechain comformations
+        if not args.no_chi_angle:
+            pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pockect.pkl'), 'wb')) # save the true pocket object
+            for rank, pos in enumerate(protein_atom_pos):
+                mod_prot = ModifiedPDB(pdb_path=protein_path_list[idx], mol=lig, pockect_pos=pos)
+                if rank == 0: 
+                    pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords.pkl'), 'wb')) # save the predicted pocket comformation
+                    mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein.pdb')) # save the predicted protein comformation(with pocket sidechain modification)
+                pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords_confidence{confidence[rank]:.2f}.pkl'), 'wb')) # save the predicted pocket comformation
+                mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein_confidence{confidence[rank]:.2f}.pdb')) # save the predicted protein comformation(with pocket sidechain modification)
+
         # save visualisation frames
         if args.save_visualisation:
             if confidence is not None:
