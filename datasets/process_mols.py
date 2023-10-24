@@ -218,7 +218,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
         if not count == 0: valid_chain_ids.append(chain.get_id())
 
     min_distances = np.array(min_distances)
-    if len(valid_chain_ids) == 0:
+    if len(valid_chain_ids) == 0: # As in current data, this is not possible, but just in case
         valid_chain_ids.append(np.argmin(min_distances))
     valid_coords = []
     valid_c_alpha_coords = []
@@ -244,7 +244,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
             valid_lengths.append(lengths[i])
         else:
             invalid_chain_ids.append(chain.get_id())
-    coords = [item for sublist in valid_coords for item in sublist]  # list with n_residues arrays: [n_atoms, 3]
+    coords = [item for sublist in valid_coords for item in sublist]  # list with n_residues arrays whose shape in [n_atoms, 3]
 
     c_alpha_coords = np.concatenate(valid_c_alpha_coords, axis=0)  # [n_residues, 3]
     n_coords = np.concatenate(valid_n_coords, axis=0)  # [n_residues, 3]

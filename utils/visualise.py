@@ -5,7 +5,10 @@ from collections import defaultdict
 import copy
 import numpy as np
 import torch
-
+from datasets.process_mols import parse_pdb_from_path
+from scipy import spatial
+from utils.rotamer import atom_name_vocab
+from Bio.PDB import PDBIO
     
 class PDBFile:
     def __init__(self, mol):
@@ -53,12 +56,51 @@ class PDBFile:
 
 class ModifiedPDB:
     # implementation for save pdb file with modified pocket sidechain coordinates
-    def __init__(self) -> None:
-        pass
-    def read_file(self):
-        pass
-    def to_pdb(self):
-        pass # mimic process_mols.extract_receptor_structure, 
-             # but change the coordinates of atoms while parsing in the same order of the preprocess. Just need two loops.
-    
+    def __init__(self, pdb_path, mol, pockect_pos) -> None:
+        # self.pdb_path = pdb_path
+        self.mol = mol
+        self.pocket_pos = pockect_pos
+        self.rec = parse_pdb_from_path(pdb_path)
+        self.pocket_cutoff = 8
+
+    def to_pdb(self, out_path):
+        # mimic process_mols.extract_receptor_structure, 
+        # but change the coordinates of atoms while parsing in the same order of the preprocess. Just need two loops.
+        conf = self.mol.GetConformer()
+        lig_coords = conf.GetPositions()
+        sc_atom_idx = 0
+        for i, chain in enumerate(self.rec):
+            for res_idx, residue in enumerate(chain):
+                if residue.get_resname() == 'HOH':
+                    continue
+                residue_coords = []
+                c_alpha, n, c = None, None, None
+                for atom in residue:
+                    if atom.name == 'CA':
+                        c_alpha = list(atom.get_vector())
+                    if atom.name == 'N':
+                        n = list(atom.get_vector())
+                    if atom.name == 'C':
+                        c = list(atom.get_vector())
+                    residue_coords.append(list(atom.get_vector()))
+                residue_coords = np.array(residue_coords)
+                dist = spatial.distance.cdist(lig_coords, residue_coords).min()
+                if c_alpha != None and n != None and c != None and dist < self.pocket_cutoff:
+                    # change the coordinates of atoms in the residue
+                    for atom in residue:
+                        if atom.name not in atom_name_vocab:
+                            continue
+                        # atoms that should be modified are modified, unchanged keep unchanged
+                        # missing keep missing
+                        atom.set_coord(self.pocket_pos[sc_atom_idx])
+                        sc_atom_idx += 1
+        
+        assert sc_atom_idx == len(self.pocket_pos), 'Not all sidechain atoms are modified, index may be mismatched.'
+
+        # write to pdb file
+        wirter = PDBIO()
+        wirter.set_structure(self.rec)
+        wirter.save(out_path) 
+            
+        
     
