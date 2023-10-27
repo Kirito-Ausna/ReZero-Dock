@@ -185,7 +185,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
                 residue_coords.append(list(atom.get_vector()))
             residue_coords = np.array(residue_coords)
             dist = spatial.distance.cdist(lig_coords, residue_coords).min()
-            if c_alpha != None and n != None and c != None and dist < pocket_cutoff:
+            if c_alpha != None and n != None and c != None and dist <= pocket_cutoff:
             # if c_alpha != None and n != None and c != None:
                 # only append residue if it is an amino acid and not some weird molecule that is part of the complex
                 chain_c_alpha_coords.append(c_alpha)
@@ -244,8 +244,8 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
             valid_lengths.append(lengths[i])
         else:
             invalid_chain_ids.append(chain.get_id())
+            
     coords = [item for sublist in valid_coords for item in sublist]  # list with n_residues arrays whose shape in [n_atoms, 3]
-
     c_alpha_coords = np.concatenate(valid_c_alpha_coords, axis=0)  # [n_residues, 3]
     n_coords = np.concatenate(valid_n_coords, axis=0)  # [n_residues, 3]
     c_coords = np.concatenate(valid_c_coords, axis=0)  # [n_residues, 3]

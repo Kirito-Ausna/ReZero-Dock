@@ -10,8 +10,9 @@ from rdkit import RDLogger
 from torch_geometric.loader import DataLoader
 
 from datasets.process_mols import write_mol_with_coords
+from datasets.pdbbind import PDBBind
 from utils.diffusion_utils import t_to_sigma as t_to_sigma_compl, get_t_schedule
-from utils.inference_utils import InferenceDataset, set_nones
+from utils.inference_utils import set_nones
 from utils.sampling import randomize_position, sampling
 from utils.utils import get_model
 from utils.visualise import PDBFile, ModifiedPDB
@@ -27,6 +28,7 @@ parser.add_argument('--complex_name', type=str, default='1a0q', help='Name that 
 parser.add_argument('--protein_path', type=str, default=None, help='Path to the protein file')
 parser.add_argument('--protein_sequence', type=str, default=None, help='Sequence of the protein for ESMFold, this is ignored if --protein_path is not None')
 parser.add_argument('--ligand_description', type=str, default='CCCCC(NC(=O)CCC(=O)O)P(=O)(O)OC1=CC=CC=C1', help='Either a SMILES string or the path to a molecule file that rdkit can read')
+parser.add_argument('--esm_embeddings_path', type=str, default='data/embeddings_output', help='Path to folder where the ESM embeddings are stored')
 
 parser.add_argument('--out_dir', type=str, default='results/user_inference', help='Directory where the outputs will be written to')
 parser.add_argument('--save_visualisation', action='store_true', default=False, help='Save a pdb file with all of the steps of the reverse diffusion')
@@ -37,15 +39,14 @@ parser.add_argument('--ckpt', type=str, default='best_ema_inference_epoch_model.
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
 
-parser.add_argument('--pocket_center_x', type=float, default=None, help='X coordinate of the pocket center')
-parser.add_argument('--pocket_center_y', type=float, default=None, help='Y coordinate of the pocket center')
-parser.add_argument('--pocket_center_z', type=float, default=None, help='Z coordinate of the pocket center')
-#TODO: add option to specify the pocket center as a vector and use it to define the pockect
 parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
 parser.add_argument('--batch_size', type=int, default=32, help='')
 parser.add_argument('--no_final_step_noise', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps')
 parser.add_argument('--actual_steps', type=int, default=None, help='Number of denoising steps that are actually performed')
+
+parser.add_argument('--cache_path', type=str, default='data/dataset_cache', help='Path to folder where the cache is stored')
+parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
 args = parser.parse_args()
 
 os.makedirs(args.out_dir, exist_ok=True)
@@ -74,29 +75,44 @@ for name in complex_name_list:
     write_dir = f'{args.out_dir}/{name}'
     os.makedirs(write_dir, exist_ok=True)
 
-# esm_embeddings = score_model_args.esm_embeddings_path
 # preprocessing of complexes into geometric graphs
-test_dataset = InferenceDataset(out_dir=args.out_dir, complex_names=complex_name_list, protein_files=protein_path_list,
-                                ligand_descriptions=ligand_description_list, protein_sequences=protein_sequence_list,
-                                lm_embeddings=score_model_args.esm_embeddings_path is not None,
-                                receptor_radius=score_model_args.receptor_radius, remove_hs=score_model_args.remove_hs,
-                                c_alpha_max_neighbors=score_model_args.c_alpha_max_neighbors,
-                                all_atoms=score_model_args.all_atoms, atom_radius=score_model_args.atom_radius,
-                                atom_max_neighbors=score_model_args.atom_max_neighbors)
+test_dataset = PDBBind(transform=None, root='',
+                       protein_path_list=protein_path_list,
+                       ligand_descriptions=ligand_description_list, 
+                       limit_complexes=0,
+                       receptor_radius=score_model_args.receptor_radius,
+                       cache_path=args.cache_path,
+                       remove_hs=score_model_args.remove_hs, max_lig_size=None,
+                       c_alpha_max_neighbors=score_model_args.c_alpha_max_neighbors,
+                       matching=False, keep_original=False,
+                       popsize=score_model_args.matching_popsize,
+                       maxiter=score_model_args.matching_maxiter,
+                       all_atoms=score_model_args.all_atoms,
+                       atom_radius=score_model_args.atom_radius,
+                       atom_max_neighbors=score_model_args.atom_max_neighbors,
+                       esm_embeddings_path=args.esm_embeddings_path,
+                       require_ligand=True,
+                       num_workers=args.num_workers)
 test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False)
 
-if args.confidence_model_dir is not None and not confidence_args.use_original_model_cache:
+if args.confidence_model_dir is not None and not confidence_args.use_original_model_cache and args.no_chi_angle:
     print('HAPPENING | confidence model uses different type of graphs than the score model. '
           'Loading (or creating if not existing) the data for the confidence model now.')
     confidence_test_dataset = \
-        InferenceDataset(out_dir=args.out_dir, complex_names=complex_name_list, protein_files=protein_path_list,
-                         ligand_descriptions=ligand_description_list, protein_sequences=protein_sequence_list,
-                         lm_embeddings=confidence_args.esm_embeddings_path is not None,
-                         receptor_radius=confidence_args.receptor_radius, remove_hs=confidence_args.remove_hs,
-                         c_alpha_max_neighbors=confidence_args.c_alpha_max_neighbors,
-                         all_atoms=confidence_args.all_atoms, atom_radius=confidence_args.atom_radius,
-                         atom_max_neighbors=confidence_args.atom_max_neighbors,
-                         precomputed_lm_embeddings=test_dataset.lm_embeddings)
+       PDBBind(transform=None, root='', limit_complexes=0,
+                               protein_path_list=protein_path_list,
+                               ligand_descriptions=ligand_description_list, 
+                               receptor_radius=confidence_args.receptor_radius,
+                               cache_path=args.cache_path,
+                               remove_hs=confidence_args.remove_hs, max_lig_size=None, c_alpha_max_neighbors=confidence_args.c_alpha_max_neighbors,
+                               matching=False, keep_original=False,
+                               popsize=confidence_args.matching_popsize,
+                               maxiter=confidence_args.matching_maxiter,
+                               all_atoms=confidence_args.all_atoms,
+                               atom_radius=confidence_args.atom_radius,
+                               atom_max_neighbors=confidence_args.atom_max_neighbors,
+                               esm_embeddings_path= args.esm_embeddings_path, require_ligand=True,
+                               num_workers=args.num_workers)
 else:
     confidence_test_dataset = None
 
@@ -115,7 +131,7 @@ model = model.to(device)
 model.eval()
 
 if args.confidence_model_dir is not None:
-    confidence_model = get_model(confidence_args, device, t_to_sigma=t_to_sigma, no_parallel=True, confidence_mode=True)
+    confidence_model = get_model(confidence_args, device, t_to_sigma=t_to_sigma, no_parallel=True, confidence_mode=True, so2_periodic=None)
     state_dict = torch.load(f'{args.confidence_model_dir}/{args.confidence_ckpt}', map_location=torch.device('cpu'))
     confidence_model.load_state_dict(state_dict, strict=True)
     confidence_model = confidence_model.to(device)
@@ -129,11 +145,11 @@ tr_schedule = get_t_schedule(inference_steps=args.inference_steps)
 failures, skipped = 0, 0
 N = args.samples_per_complex
 print('Size of test dataset: ', len(test_dataset))
-for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed is 1, because of the randomize_position function
-    if not orig_complex_graph.success[0]:
-        skipped += 1
-        print(f"HAPPENING | The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
-        continue
+for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Docking Conformation", total=len(test_dataset)): # batch size fixed is 1, because of the randomize_position function
+    # if not orig_complex_graph.success[0]:
+    #     skipped += 1
+    #     print(f"HAPPENING | The test dataset did not contain {test_dataset.complex_names[idx]} for {test_dataset.ligand_descriptions[idx]} and {test_dataset.protein_files[idx]}. We are skipping this complex.")
+    #     continue
     try:
         if confidence_test_dataset is not None and args.no_chi_angle:
             confidence_complex_graph = confidence_test_dataset[idx]
@@ -145,7 +161,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
-        randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.tr_sigma_max)
+        randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.no_chi_angle, score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
         lig = orig_complex_graph.mol[0]
         true_pockect = orig_complex_graph['sidechain']
         # restore the original pocket center
@@ -165,12 +181,12 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
 
         # run reverse diffusion
         data_list, confidence = sampling(data_list=data_list, model=model,
-                                         inference_steps=args.actual_steps if args.actual_steps is not None else args.inference_steps,
-                                         tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule,
-                                         device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
-                                         visualization_list=visualization_list, confidence_model=confidence_model,
-                                         confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
-                                         batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise)
+                                            inference_steps=args.actual_steps if args.actual_steps is not None else args.inference_steps,
+                                            tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule, chi_schedule=tr_schedule,
+                                            device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
+                                            visualization_list=visualization_list, confidence_model=confidence_model,
+                                            confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
+                                            batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise)
         ligand_pos = np.asarray([complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
         protein_atom_pos = np.asarray([complex_graph['atom'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
         # reorder predictions based on confidence output
@@ -194,7 +210,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader)): # batch size fixed 
         if not args.no_chi_angle:
             pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pockect.pkl'), 'wb')) # save the true pocket object
             for rank, pos in enumerate(protein_atom_pos):
-                mod_prot = ModifiedPDB(pdb_path=protein_path_list[idx], mol=lig, pockect_pos=pos)
+                mod_prot = ModifiedPDB(pdb_path=protein_path_list[idx], ligand_description=ligand_description_list[idx], pockect_pos=pos)
                 if rank == 0: 
                     pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords.pkl'), 'wb')) # save the predicted pocket comformation
                     mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein.pdb')) # save the predicted protein comformation(with pocket sidechain modification)

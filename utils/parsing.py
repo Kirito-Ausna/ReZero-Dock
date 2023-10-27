@@ -21,7 +21,7 @@ def parse_train_args():
     parser.add_argument('--inference_earlystop_metric', type=str, default='val_inference/rmsds_lt2', help='This is the metric that is addionally used when val_inference_freq is not None')
     parser.add_argument('--inference_earlystop_goal', type=str, default='max', help='Whether to maximize or minimize metric')
     parser.add_argument('--wandb', action='store_true', default=False, help='')
-    parser.add_argument('--project', type=str, default='VISUALDOCK', help='')
+    parser.add_argument('--project', type=str, default='ReDock', help='')
     parser.add_argument('--run_name', type=str, default='visualdock_debug0', help='')
     parser.add_argument('--group', type=str, default='VisualDock_debug', help='')
     parser.add_argument('--cudnn_benchmark', action='store_true', default=False, help='CUDA optimization parameter for faster training')

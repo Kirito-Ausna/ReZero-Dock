@@ -61,7 +61,8 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
 
         loader = DataLoader(data_list, batch_size=batch_size)
         new_data_list = []
-
+        # batch_add = False
+        # pdb.set_trace()
         for complex_graph_batch in loader:
             # pdb.set_trace()
             b = complex_graph_batch.num_graphs
@@ -70,18 +71,25 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
             protein = complex_graph_batch['sidechain']
             # calculate the offset of each protein
             offset = 0
-            for i in range(b):
-                protein.atom2residue[batch_index == i] += offset
-                offset += protein.num_residue[i]
+            # check if protein.atom2residue is already batched
+            # num_residue1 = protein.num_residue[0]
+            end_last = protein.atom2residue[batch_index == 0][-1]
+            begin_first = protein.atom2residue[batch_index == 1][0]
+            if end_last + 1 != begin_first:
+                for i in range(b):
+                    protein.atom2residue[batch_index == i] += offset
+                    offset += protein.num_residue[i]
+            # pdb.set_trace()
             # causal sidechain mask
             # protein.num_residue = sum(protein.num_residue) # handle batch, but there is only one sample and this operation will result in problem with splitting batch
             # protein.num_nodes = protein.num_residue # fix the bug with batching num_nodes property
             tr_sigma, rot_sigma, tor_sigma, chi_sigma = t_to_sigma(t_tr, t_rot, t_tor, t_chi)
             set_time(complex_graph_batch, t_tr, t_rot, t_tor, t_chi, b, model_args.all_atoms, device)
-            
+            # pdb.set_trace()
             with torch.no_grad():
                 # tr_score, rot_score, tor_score, chi_score = model(complex_graph_batch)
                 for chi_id in range(NUM_CHI_ANGLES):
+                    # pdb.set_trace()
                     chis = rotamer.get_chis(protein, protein.node_position) # all chi angles including currently unchanged angles
                     # predict score for each chi angle, tr, rot and tor score will also be predicted autoregressively
                     #NOTE: in My implementation remove_by_chi will modify the complex_graph_batch directly for avoiding deep copy in training
@@ -93,6 +101,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                     # step backward for chi angle and predict next chi. It could be noisy but I have no choise
                     chis = model.so2_periodic[0].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_1pi_periodic_mask)
                     chis = model.so2_periodic[1].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_2pi_periodic_mask)
+                    # pdb.set_trace()
                     protein = rotamer.set_chis(protein, chis)
                     # Modify the complex graph according to protein dict
                     complex_graph_batch['atom'].pos = protein.node_position
@@ -103,7 +112,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
 
             tr_g = tr_sigma * torch.sqrt(torch.tensor(2 * np.log(model_args.tr_sigma_max / model_args.tr_sigma_min)))
             rot_g = 2 * rot_sigma * torch.sqrt(torch.tensor(np.log(model_args.rot_sigma_max / model_args.rot_sigma_min)))
-
+            # pdb.set_trace()
             if ode:
                 tr_perturb = (0.5 * tr_g ** 2 * dt_tr * tr_score.cpu()).cpu()
                 rot_perturb = (0.5 * rot_score.cpu() * dt_rot * rot_g ** 2).cpu()
@@ -151,9 +160,10 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                     confidence_complex_graph_batch = next(confidence_loader).to(device)
                     confidence_complex_graph_batch['ligand'].pos = complex_graph_batch['ligand'].pos
                     #TODO: Replace the protein sidechain conformation
-                    set_time(confidence_complex_graph_batch, 0, 0, 0, N, confidence_model_args.all_atoms, device)
+                    set_time(confidence_complex_graph_batch, 0, 0, 0, 0, N, confidence_model_args.all_atoms, device)
                     confidence.append(confidence_model(confidence_complex_graph_batch))
                 else:
+                    set_time(complex_graph_batch, 0, 0, 0, 0, N, confidence_model_args.all_atoms, device)
                     confidence.append(confidence_model(complex_graph_batch))
             confidence = torch.cat(confidence, dim=0)
         else:

@@ -70,7 +70,7 @@ class NoiseTransform(BaseTransform):
 
         return data
 
-def collate_fn(data_list, transform=None): # DataListLoader won't call this function, collate_fn is deleted in the source code
+def collate_fn(data_list, transform=None): # DataListLoader won't call this function, collate_fn is deleted in its source code
     if transform is not None:
         train_chi_id = np.random.randint(4)
         transform.train_chi_id = train_chi_id
@@ -251,7 +251,7 @@ class PDBBind(Dataset):
                     p.__enter__()
                 with tqdm(total=len(complex_names), desc=f'loading complexes {i}/{len(complex_names_all)//1000+1}') as pbar:
                     map_fn = p.imap_unordered if self.num_workers > 1 else map
-                    for t in map_fn(self.get_complex, zip(complex_names, lm_embeddings_chains, [None] * len(complex_names), [None] * len(complex_names))):
+                    for t in map_fn(self.get_complex, zip(complex_names, lm_embeddings_chains, [None] * len(complex_names), [None] * len(complex_names), [None] * len(complex_names))):
                         complex_graphs.extend(t[0])
                         rdkit_ligands.extend(t[1])
                         pbar.update()
@@ -281,7 +281,7 @@ class PDBBind(Dataset):
             complex_graphs, rdkit_ligands = [], []
             # complex_names_debug = complex_names_all[:1000]
             with tqdm(total=len(complex_names_all), desc='loading complexes') as pbar:
-                for t in map(self.get_complex, zip(complex_names_all, lm_embeddings_chains_all, [None] * len(complex_names_all), [None] * len(complex_names_all))):
+                for t in map(self.get_complex, zip(complex_names_all, lm_embeddings_chains_all, [None] * len(complex_names_all), [None] * len(complex_names_all), [None] * len(complex_names_all))):
                     complex_graphs.extend(t[0])
                     rdkit_ligands.extend(t[1])
                     pbar.update()
@@ -290,47 +290,78 @@ class PDBBind(Dataset):
             with open(os.path.join(self.full_cache_path, "rdkit_ligands.pkl"), 'wb') as f:
                 pickle.dump((rdkit_ligands), f)
 
-    def inference_preprocessing(self):
+    def inference_preprocessing(self):# Now the inference_preprocessing is the same as preprocessing with different input
         ligands_list = []
         print('Reading molecules and generating local structures with RDKit (unless --keep_local_structures is turned on).')
         failed_ligand_indices = []
-        for idx, ligand_description in tqdm(enumerate(self.ligand_descriptions)):
-            try:
-                mol = MolFromSmiles(ligand_description)  # check if it is a smiles or a path
-                if mol is not None:
-                    mol = AddHs(mol)
-                    generate_conformer(mol)
-                    ligands_list.append(mol)
-                else:
-                    mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
+        true_ligands = []
+        # need true_ligands for determining the pocket right now
+        if os.path.exists(os.path.join(self.full_cache_path, "true_ligands.pkl")):
+            with open(os.path.join(self.full_cache_path, "true_ligands.pkl"), 'rb') as f:
+                true_ligands = pickle.load(f)
+        else:
+            with tqdm(total=len(self.ligand_descriptions), desc='Processing true ligands') as pbar:
+                for idx, ligand_description in enumerate(self.ligand_descriptions):
+                    mol = MolFromSmiles(ligand_description)  # check if it is a smiles or a path
                     if mol is None:
-                        raise Exception('RDKit could not read the molecule ', ligand_description)
-                    if not self.keep_local_structures:
-                        mol.RemoveAllConformers()
-                        mol = AddHs(mol)
-                        generate_conformer(mol)
-                    ligands_list.append(mol)
-            except Exception as e:
+                        mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
+                    true_ligands.append(mol)
+                    pbar.update()
+            with open(os.path.join(self.full_cache_path, "true_ligands.pkl"), 'wb') as f:
+                pickle.dump((true_ligands), f)
+        # Cache the RDKit ligands for inference only (the molecules need to be docked to the receptor, not for pocket truncation)
+        if os.path.exists(os.path.join(self.full_cache_path, "ligands_list.pkl")):
+            with open(os.path.join(self.full_cache_path, "ligands_list.pkl"), 'rb') as f:
+                ligands_list = pickle.load(f)
+            with open(os.path.join(self.full_cache_path, "failed_ligand_indices.pkl"), 'rb') as f:
+                failed_ligand_indices = pickle.load(f)
+        else:
+            with tqdm(total=len(self.ligand_descriptions), desc='Processing ligands') as pbar:
+                for idx, ligand_description in enumerate(self.ligand_descriptions):
+                    try:
+                        mol = MolFromSmiles(ligand_description)  # check if it is a smiles or a path
+                        if mol is not None:
+                            mol = AddHs(mol)
+                            generate_conformer(mol)
+                            ligands_list.append(mol)
+                        else:
+                            mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
+                            if mol is None:
+                                raise Exception('RDKit could not read the molecule ', ligand_description)
+                            if not self.keep_local_structures:
+                                mol.RemoveAllConformers()
+                                mol = AddHs(mol)
+                                generate_conformer(mol)
+                            ligands_list.append(mol)
+                    except Exception as e:
+                        print('Failed to read molecule ', ligand_description, ' We are skipping it. The reason is the exception: ', e)
+                        failed_ligand_indices.append(idx)
+                    pbar.update()
+            with open(os.path.join(self.full_cache_path, "ligands_list.pkl"), 'wb') as f:
+                pickle.dump((ligands_list), f)
+            with open(os.path.join(self.full_cache_path, "failed_ligand_indices.pkl"), 'wb') as f:
+                pickle.dump((failed_ligand_indices), f)
 
-                print('Failed to read molecule ', ligand_description, ' We are skipping it. The reason is the exception: ', e)
-                failed_ligand_indices.append(idx)
         for index in sorted(failed_ligand_indices, reverse=True):
             del self.protein_path_list[index]
             del self.ligand_descriptions[index]
-
+            del true_ligands[index]
+        
+        # Prepare the ESM embeddings in advance
         if self.esm_embeddings_path is not None:
             print('Reading language model embeddings.')
             lm_embeddings_chains_all = []
             if not os.path.exists(self.esm_embeddings_path): raise Exception('ESM embeddings path does not exist: ',self.esm_embeddings_path)
             for protein_path in self.protein_path_list:
                 embeddings_paths = sorted(glob.glob(os.path.join(self.esm_embeddings_path, os.path.basename(protein_path)) + '*'))
+                # pdb.set_trace()
                 lm_embeddings_chains = []
                 for embeddings_path in embeddings_paths:
                     lm_embeddings_chains.append(torch.load(embeddings_path)['representations'][33])
                 lm_embeddings_chains_all.append(lm_embeddings_chains)
         else:
             lm_embeddings_chains_all = [None] * len(self.protein_path_list)
-
+        # pdb.set_trace()
         print('Generating graphs for ligands and proteins')
         if self.num_workers > 1:
             # running preprocessing in parallel on multiple workers and saving the progress every 1000 complexes
@@ -341,13 +372,14 @@ class PDBBind(Dataset):
                 ligand_description_chunk = self.ligand_descriptions[1000*i:1000*(i+1)]
                 ligands_chunk = ligands_list[1000 * i:1000 * (i + 1)]
                 lm_embeddings_chains = lm_embeddings_chains_all[1000*i:1000*(i+1)]
+                true_ligands_chunk = true_ligands[1000*i:1000*(i+1)]
                 complex_graphs, rdkit_ligands = [], []
                 if self.num_workers > 1:
                     p = Pool(self.num_workers, maxtasksperchild=1)
                     p.__enter__()
                 with tqdm(total=len(protein_paths_chunk), desc=f'loading complexes {i}/{len(protein_paths_chunk)//1000+1}') as pbar:
                     map_fn = p.imap_unordered if self.num_workers > 1 else map
-                    for t in map_fn(self.get_complex, zip(protein_paths_chunk, lm_embeddings_chains, ligands_chunk,ligand_description_chunk)):
+                    for t in map_fn(self.get_complex, zip(protein_paths_chunk, lm_embeddings_chains, ligands_chunk, ligand_description_chunk, true_ligands_chunk)):
                         complex_graphs.extend(t[0])
                         rdkit_ligands.extend(t[1])
                         pbar.update()
@@ -376,7 +408,7 @@ class PDBBind(Dataset):
         else:
             complex_graphs, rdkit_ligands = [], []
             with tqdm(total=len(self.protein_path_list), desc='loading complexes') as pbar:
-                for t in map(self.get_complex, zip(self.protein_path_list, lm_embeddings_chains_all, ligands_list, self.ligand_descriptions)):
+                for t in map(self.get_complex, zip(self.protein_path_list, lm_embeddings_chains_all, ligands_list, self.ligand_descriptions, true_ligands)):
                     complex_graphs.extend(t[0])
                     rdkit_ligands.extend(t[1])
                     pbar.update()
@@ -387,7 +419,7 @@ class PDBBind(Dataset):
                 pickle.dump((rdkit_ligands), f)
 
     def get_complex(self, par):
-        name, lm_embedding_chains, ligand, ligand_description = par
+        name, lm_embedding_chains, ligand, ligand_description, true_lignd = par
         if not os.path.exists(os.path.join(self.pdbbind_dir, name)) and ligand is None:
             print("Folder not found", name)
             return [], []
@@ -396,6 +428,7 @@ class PDBBind(Dataset):
             rec_model = parse_pdb_from_path(name)
             name = f'{name}____{ligand_description}'
             ligs = [ligand]
+            true_lignds = [true_lignd]
         else:
             try:
                 rec_model = parse_receptor(name, self.pdbbind_dir)
@@ -405,6 +438,8 @@ class PDBBind(Dataset):
                 return [], []
 
             ligs = read_mols(self.pdbbind_dir, name, remove_hs=False)
+            true_lignds = ligs
+
         complex_graphs = []
         failed_indices = []
         for i, lig in enumerate(ligs):
@@ -416,7 +451,8 @@ class PDBBind(Dataset):
             try:
                 get_lig_graph_with_matching(lig, complex_graph, self.popsize, self.maxiter, self.matching, self.keep_original,
                                             self.num_conformers, remove_hs=self.remove_hs)
-                rec, rec_coords, c_alpha_coords, n_coords, c_coords, lm_embeddings = extract_receptor_structure(copy.deepcopy(rec_model), lig, lm_embedding_chains=lm_embedding_chains)
+                # Receptor Building and Pocket truncation, currently need true ligands for pocket truncation
+                rec, rec_coords, c_alpha_coords, n_coords, c_coords, lm_embeddings = extract_receptor_structure(copy.deepcopy(rec_model), true_lignds[i], lm_embedding_chains=lm_embedding_chains)
                 if lm_embeddings is not None and len(c_alpha_coords) != len(lm_embeddings):
                     print(f'LM embeddings for complex {name} did not have the right length for the protein. Skipping {name}.')
                     failed_indices.append(i)

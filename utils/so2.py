@@ -176,7 +176,7 @@ class SO2VESchedule(SO2Schedule):
         return torch.exp(self.sigma_min_log + (self.sigma_max_log - self.sigma_min_log) * t)
 
     @torch.no_grad()
-    def add_noise(self, x, chi_sigma, x_mask=None):
+    def add_noise(self, x, t, x_mask=None):
         """Add noise to the input tensor (torsion angles).
 
         Args:
@@ -185,10 +185,10 @@ class SO2VESchedule(SO2Schedule):
             t (Tensor): Timesteps of shape :math:`(num_res)`
             chi_sigma (Tensor): Chi angle standard deviation of shape :math:`(num_res)`
         """
-        # sigmas = self.t_to_sigma(t)
+        sigmas = self.t_to_sigma(t)
         # pdb.set_trace()
-        sigmas = chi_sigma.unsqueeze(-1)
-        noise = torch.randn_like(x) * sigmas
+        # sigmas = chi_sigma.unsqueeze(-1)
+        noise = torch.randn_like(x) * sigmas.unsqueeze(-1)
         # print(noise.shape, sigmas.shape, x.shape)
         score = torch.tensor(
             self.score(noise.cpu().numpy(), sigmas.cpu().numpy()), device=x.device, dtype=x.dtype

@@ -211,11 +211,11 @@ class TensorProductScoreModel(torch.nn.Module):
             data = rotamer.remove_by_chi(data, chi_id) # new protein, change with iteration. data['sidechain'] is the original protein will remian as orign
         # pdb.set_trace()
         chis = rotamer.get_chis(protein, protein.node_position) # [num_residue, 4]
-        node_chi_sigma = data['receptor'].node_t['chi']
+        node_chi_t = data['receptor'].node_t['chi']
         # pdb.set_trace()
         
-        chis, chi_score_1pi = self.so2_periodic[0].add_noise(chis, node_chi_sigma, protein.chi_1pi_periodic_mask)
-        chis, chi_score_2pi = self.so2_periodic[1].add_noise(chis, node_chi_sigma, protein.chi_2pi_periodic_mask)
+        chis, chi_score_1pi = self.so2_periodic[0].add_noise(chis, node_chi_t, protein.chi_1pi_periodic_mask)
+        chis, chi_score_2pi = self.so2_periodic[1].add_noise(chis, node_chi_t, protein.chi_2pi_periodic_mask)
         chi_score = torch.where(protein.chi_1pi_periodic_mask, chi_score_1pi, chi_score_2pi)
         # change the conformation of proteins
         protein = rotamer.set_chis(protein, chis)
@@ -379,7 +379,7 @@ class TensorProductScoreModel(torch.nn.Module):
             return tr_pred, rot_pred, tor_pred, torch.empty(0,device=self.device)
 
         chi_id = data.chi_id
-        ar_node_update = scatter_mean(atom_node_attr, data['sidechain'].atom2residue, dim=0, dim_size=data['sidechain'].num_residue)
+        ar_node_update = scatter_mean(atom_node_attr, data['sidechain'].atom2residue, dim=0, dim_size=sum(data['sidechain'].num_residue))
         chi_node_attr = rec_node_attr + ar_node_update
         scalar_chi_attr = torch.cat([chi_node_attr[:,:self.ns],chi_node_attr[:,-self.ns:]], dim=1) if self.num_conv_layers >= 3 else chi_node_attr[:,:self.ns]
         # pdb.set_trace()

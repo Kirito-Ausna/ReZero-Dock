@@ -94,6 +94,9 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
             'ema_weights': ema_weights.state_dict(),
         }, os.path.join(run_dir, 'last_model.pt'))
 
+        if epoch % 50 == 0:
+            torch.cuda.empty_cache() # for clearing memory to prevent slowdowns
+
     print("Best Validation Loss {} on Epoch {}".format(best_val_loss, best_epoch))
     print("Best inference metric {} on Epoch {}".format(best_val_inference_value, best_val_inference_epoch))
 

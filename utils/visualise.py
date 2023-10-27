@@ -9,6 +9,10 @@ from datasets.process_mols import parse_pdb_from_path
 from scipy import spatial
 from utils.rotamer import atom_name_vocab
 from Bio.PDB import PDBIO
+import pdb
+from rdkit.Chem import MolFromSmiles
+from datasets.process_mols import read_molecule
+
     
 class PDBFile:
     def __init__(self, mol):
@@ -56,11 +60,15 @@ class PDBFile:
 
 class ModifiedPDB:
     # implementation for save pdb file with modified pocket sidechain coordinates
-    def __init__(self, pdb_path, mol, pockect_pos) -> None:
+    def __init__(self, pdb_path, ligand_description, pockect_pos) -> None:
         # self.pdb_path = pdb_path
-        self.mol = mol
+        # self.mol = mol
         self.pocket_pos = pockect_pos
         self.rec = parse_pdb_from_path(pdb_path)
+        mol = MolFromSmiles(ligand_description)
+        if mol is None:
+            mol = read_molecule(ligand_description)
+        self.mol = mol
         self.pocket_cutoff = 8
 
     def to_pdb(self, out_path):
@@ -85,7 +93,7 @@ class ModifiedPDB:
                     residue_coords.append(list(atom.get_vector()))
                 residue_coords = np.array(residue_coords)
                 dist = spatial.distance.cdist(lig_coords, residue_coords).min()
-                if c_alpha != None and n != None and c != None and dist < self.pocket_cutoff:
+                if c_alpha != None and n != None and c != None and dist <= self.pocket_cutoff:
                     # change the coordinates of atoms in the residue
                     for atom in residue:
                         if atom.name not in atom_name_vocab:
@@ -94,9 +102,11 @@ class ModifiedPDB:
                         # missing keep missing
                         atom.set_coord(self.pocket_pos[sc_atom_idx])
                         sc_atom_idx += 1
-        
+        # pdb.set_trace()
         assert sc_atom_idx == len(self.pocket_pos), 'Not all sidechain atoms are modified, index may be mismatched.'
-
+        # if sc_atom_idx != len(self.pocket_pos):
+        #     print('Not all sidechain atoms are modified, index may be mismatched.')
+        #     pdb.set_trace()
         # write to pdb file
         wirter = PDBIO()
         wirter.set_structure(self.rec)
