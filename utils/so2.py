@@ -185,10 +185,9 @@ class SO2VESchedule(SO2Schedule):
             t (Tensor): Timesteps of shape :math:`(num_res)`
             chi_sigma (Tensor): Chi angle standard deviation of shape :math:`(num_res)`
         """
-        sigmas = self.t_to_sigma(t)
-        # pdb.set_trace()
+        sigmas = self.t_to_sigma(t).unsqueeze(-1)
         # sigmas = chi_sigma.unsqueeze(-1)
-        noise = torch.randn_like(x) * sigmas.unsqueeze(-1)
+        noise = torch.randn_like(x) * sigmas
         # print(noise.shape, sigmas.shape, x.shape)
         score = torch.tensor(
             self.score(noise.cpu().numpy(), sigmas.cpu().numpy()), device=x.device, dtype=x.dtype

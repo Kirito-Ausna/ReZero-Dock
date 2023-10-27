@@ -73,14 +73,16 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
             offset = 0
             # check if protein.atom2residue is already batched
             # num_residue1 = protein.num_residue[0]
-            end_last = protein.atom2residue[batch_index == 0][-1]
-            begin_first = protein.atom2residue[batch_index == 1][0]
-            if end_last + 1 != begin_first:
-                for i in range(b):
-                    protein.atom2residue[batch_index == i] += offset
-                    offset += protein.num_residue[i]
+            if b != 1: # only handle mini-batch
+                end_last = protein.atom2residue[batch_index == 0][-1]
+                begin_first = protein.atom2residue[batch_index == 1][0]
+                if end_last + 1 != begin_first:
+                    for i in range(b):
+                        protein.atom2residue[batch_index == i] += offset
+                        offset += protein.num_residue[i]
             # pdb.set_trace()
             # causal sidechain mask
+            # protein.num_nodes is automatically calculated by pytorch geometric, don't need sum(protein.num_residue)
             # protein.num_residue = sum(protein.num_residue) # handle batch, but there is only one sample and this operation will result in problem with splitting batch
             # protein.num_nodes = protein.num_residue # fix the bug with batching num_nodes property
             tr_sigma, rot_sigma, tor_sigma, chi_sigma = t_to_sigma(t_tr, t_rot, t_tor, t_chi)

@@ -204,7 +204,7 @@ class TensorProductScoreModel(torch.nn.Module):
                 protein.atom2residue[batch_index == i] += offset
                 offset += protein.num_residue[i]
             # causal sidechain mask
-            protein.num_residue = sum(protein.num_residue) # handle batch, but will result in the problem when spliting the batch 
+            # protein.num_residue = torch.sum(protein.num_residue, dim=0, keepdim=True) # handle batch, but will result in the problem when spliting the batch 
 
         if chi_id is not None:
             # pdb.set_trace()

@@ -379,9 +379,9 @@ def get_atom37_position(protein, node_position=None, return_nan=True):
     device = node_position.device
     if return_nan:
         # pdb.set_trace()
-        node_position37 = torch.ones((sum(protein.num_residue), 37, 3), dtype=torch.float, device=device) * np.nan
+        node_position37 = torch.ones((protein.num_nodes, 37, 3), dtype=torch.float, device=device) * np.nan
     else:
-        node_position37 = torch.zeros((sum(protein.num_residue), 37, 3), dtype=torch.float, device=device)
+        node_position37 = torch.zeros((protein.num_nodes, 37, 3), dtype=torch.float, device=device)
     # pdb.set_trace()
     node_position37[protein.atom2residue, protein.atom_name, :] = node_position
     return node_position37
@@ -561,14 +561,14 @@ def get_atom14_position(protein, node_position=None):
     atom14index = restype_atom14_index_map.to(node_position.device)[
         protein.residue_type[protein.atom2residue], protein.atom_name
     ]  # (num_atom, )
-    node_position14 = torch.zeros((sum(protein.num_residue), 14, 3), dtype=torch.float, device=node_position.device)
+    node_position14 = torch.zeros((protein.num_nodes, 14, 3), dtype=torch.float, device=node_position.device)
     mask14 = atom14index != -1  # (num_atom, )
     node_position14[protein.atom2residue[mask14], atom14index[mask14], :] = node_position[mask14]
     return node_position14, mask14
 
 @torch.no_grad()
 def rotate_side_chain(protein, rotate_angles):
-    assert rotate_angles.shape[0] == sum(protein.num_residue)
+    assert rotate_angles.shape[0] == protein.num_nodes
     assert rotate_angles.shape[1] == 4
     node_position14, mask14 = get_atom14_position(protein)  # (num_residue, 14, 3)
 
@@ -607,7 +607,7 @@ def rotate_side_chain(protein, rotate_angles):
 
 @torch.no_grad()
 def set_chis(protein, chis):
-    assert chis.shape[0] == sum(protein.num_residue)
+    assert chis.shape[0] == protein.num_nodes
     assert chis.shape[1] == 4
     cur_chis = get_chis(protein)
     chi_to_rotate = chis - cur_chis
