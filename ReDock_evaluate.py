@@ -19,6 +19,7 @@ from utils.visualise import PDBFile, ModifiedPDB
 from tqdm import tqdm
 from utils.so2 import SO2VESchedule
 import pickle
+import pdb
 
 RDLogger.DisableLog('rdApp.*')
 import yaml
@@ -71,6 +72,13 @@ else:
     ligand_description_list = [args.ligand_description]
 
 complex_name_list = [name if name is not None else f"complex_{i}" for i, name in enumerate(complex_name_list)]
+for i, name in enumerate(complex_name_list):
+    if name is None:
+        complex_name_list[i] = f'complex_{i}'
+    elif isinstance(name, int): # rename number to pdbid
+        # get dirname of path, then get the last folder name
+        complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
+# pdb.set_trace()
 for name in complex_name_list:
     write_dir = f'{args.out_dir}/{name}'
     os.makedirs(write_dir, exist_ok=True)
@@ -167,7 +175,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
         # restore the original pocket center
         true_pockect.node_position = true_pockect.node_position + orig_complex_graph.original_center
         # initialize visualisation
-        pdb = None
+        # pdb = None
         if args.save_visualisation:
             visualization_list = []
             for graph in data_list:
@@ -200,7 +208,11 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
             protein_atom_pos = protein_atom_pos[re_order]
 
         # save predictions
-        write_dir = f'{args.out_dir}/{complex_name_list[idx]}'
+        protein_path = orig_complex_graph["name"][0].split('____')[0]
+        ligand_description = orig_complex_graph["name"][0].split('____')[-1]
+        complex_name = os.path.split(os.path.dirname(protein_path))[1]
+        # pdb.set_trace()
+        write_dir = f'{args.out_dir}/{complex_name}'
         for rank, pos in enumerate(ligand_pos):
             mol_pred = copy.deepcopy(lig)
             if score_model_args.remove_hs: mol_pred = RemoveHs(mol_pred)
@@ -210,7 +222,8 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
         if not args.no_chi_angle:
             pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pockect.pkl'), 'wb')) # save the true pocket object
             for rank, pos in enumerate(protein_atom_pos):
-                mod_prot = ModifiedPDB(pdb_path=protein_path_list[idx], ligand_description=ligand_description_list[idx], pockect_pos=pos)
+                # read protein_path and ligand_description from the complex_name, to prevent the error of index shift when preprocessing in PDBBind class failded in some cases
+                mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pockect_pos=pos)
                 if rank == 0: 
                     pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords.pkl'), 'wb')) # save the predicted pocket comformation
                     mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein.pdb')) # save the predicted protein comformation(with pocket sidechain modification)

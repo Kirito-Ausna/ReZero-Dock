@@ -12,37 +12,37 @@ possible_amino_acids = ['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 
 
 complex_graphs = pickle.load(open('/root/Generative-Models/DiffDock/data/dataset_cache_torsion_allatoms/limit0_INDEXtimesplit_no_lig_overlap_train_maxLigSizeNone_H0_recRad15.0_recMax24_atomRad5_atomMax8_esmEmbeddings/heterographs.pkl', 'rb'))
 rdkit_graphs = pickle.load(open('/root/Generative-Models/DiffDock/data/dataset_cache_torsion_allatoms/limit0_INDEXtimesplit_no_lig_overlap_train_maxLigSizeNone_H0_recRad15.0_recMax24_atomRad5_atomMax8_esmEmbeddings/rdkit_ligands.pkl', 'rb'))
-# inconsistent = []
-# inconsistent_num = 0
-# # for idx, complex_graph in enumerate(complex_graphs):
-# # add tqdm
-# for idx, complex_graph in tqdm(enumerate(complex_graphs)):
-#     name = complex_graph['name']
-#     protein = complex_graph['sidechain']
-#     len_res_sc = protein.residue_type.shape[0]
-#     len_res = complex_graph['receptor'].num_nodes
-#     # assert len_res_sc == len_res, f"The number of residues in the {name} sidechain graph is not equal to the number of residues in the full graph."
-#     if len_res_sc != len_res:
-#         inconsistent.append((name,idx))
-#         inconsistent_num += 1
-#         print(f"The number of residues in the {name} sidechain graph is not equal to the number of residues in the full graph.")
+inconsistent = []
+inconsistent_num = 0
+# for idx, complex_graph in enumerate(complex_graphs):
+# add tqdm
+for idx, complex_graph in tqdm(enumerate(complex_graphs)):
+    name = complex_graph['name']
+    protein = complex_graph['sidechain']
+    len_res_sc = protein.residue_type.shape[0]
+    len_res = complex_graph['receptor'].num_nodes
+    # assert len_res_sc == len_res, f"The number of residues in the {name} sidechain graph is not equal to the number of residues in the full graph."
+    if len_res_sc != len_res:
+        inconsistent.append((name,idx))
+        inconsistent_num += 1
+        print(f"The number of residues in the {name} sidechain graph is not equal to the number of residues in the full graph.")
     
-#     len_atom_sc = protein.atom2residue.shape[0]
-#     len_atom = complex_graph['atom'].num_nodes
+    len_atom_sc = protein.atom2residue.shape[0]
+    len_atom = complex_graph['atom'].num_nodes
 
-#     if len_atom_sc != len_atom:
-#         inconsistent.append((name,idx))
-#         inconsistent_num += 1
-#         print(f"The number of atoms in the {name} sidechain graph is not equal to the number of atoms in the full graph.")
+    if len_atom_sc != len_atom:
+        inconsistent.append((name,idx))
+        inconsistent_num += 1
+        print(f"The number of atoms in the {name} sidechain graph is not equal to the number of atoms in the full graph.")
 
-# print(f"Total number of inconsistent graphs: {inconsistent_num}")
-# print(f"Inconsistent graphs: {inconsistent}")
+print(f"Total number of inconsistent graphs: {inconsistent_num}")
+print(f"Inconsistent graphs: {inconsistent}")
 
-# # save the inconsistent graphs
-# with open('inconsistent_graphs.pkl', 'wb') as f:
-#     pickle.dump(inconsistent, f)
+# save the inconsistent graphs
+with open('inconsistent_graphs.pkl', 'wb') as f:
+    pickle.dump(inconsistent, f)
 
-# # load the inconsistent graphs
+# load the inconsistent graphs
 with open('/root/Generative-Models/DiffDock/datasets/inconsistent_graphs.pkl', 'rb') as f:
     inconsistent = pickle.load(f)
 
