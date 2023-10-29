@@ -49,7 +49,8 @@ And you are ready to run inference:
 
     python Reock_evaluate.py --protein_ligand_csv data/protein_ligand_example_csv.csv --out_dir results/user_predictions_small --inference_steps 20 --samples_per_complex 40 --batch_size 10 --actual_steps 18 --no_final_step_noise
 
-Or `bash ./script/inference.sh` I recomand the inference style with many complexes(i.e. via a csv file) with explict name of every complex
+Or `bash ./script/inference.sh` I recomand the inference style with many complexes(i.e. via a csv file) with explict name of every complex.
+
 When providing the `.pdb` files you can run DiffDock also on CPU, however, if possible, we recommend using a GPU as the model runs significantly faster. Note that the first time you run DiffDock on a device the program will precompute and store in cache look-up tables for SO(2) and SO(3) distributions (typically takes a couple of minutes), this won't be repeated in following runs.  
 
 

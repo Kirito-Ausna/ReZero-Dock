@@ -159,17 +159,19 @@ class PDBBind(Dataset):
                 res_type = 0
             else:
                 res_type = safe_index(residue_list, res.get_resname()) # make sure it's normal amino acid
-            res_id = res.get_id() # A residue id is a tuple of (hetero-flag, sequence identifier, insertion code)
+            # res_id = res.get_id() # A residue id is a tuple of (hetero-flag, sequence identifier, insertion code)
             # pdb.set_trace()
             atom_name.append(atom_name_vocab[atom.name])
             atom_residue_type.append(res_type)
             if last_residue is None:
-                last_residue = res_id
+                # last_residue = res_id
+                last_residue = res # directly use the res object to compare
                 residue_type.append(res_type)
             atom2residue.append(res_index)
-            if res_id != last_residue:
+            if res != last_residue:
                 res_index += 1
-                last_residue = res_id
+                # last_residue = res_id
+                last_residue = res
                 residue_type.append(res_type)
         protein = complex_graphs['sidechain']
         # save the rec_coords for usage in add_noise
@@ -180,12 +182,15 @@ class PDBBind(Dataset):
         protein.atom14index = rotamer.restype_atom14_index_map[atom_residue_type, atom_name] # [num_atom,]
         protein.atom_name = atom_name
         # complex_graphs['receptor'].residue_type = atom_residue_type
+        protein.atom2residue = torch.tensor(atom2residue)
+        protein.residue_type = torch.tensor(residue_type)
+
         residue_indexes = complex_graphs['receptor'].x[:,0]
         protein.num_residue = residue_indexes.shape[0]
         protein.num_nodes = complex_graphs['receptor'].num_nodes
+        assert protein.num_residue == protein.residue_type.shape[0],\
+              f"The number of residues {protein.num_residue} in the sidechain graph is not equal to the number of residues {protein.residue_type.shape[0]} in the residues graph."
         # complex_graphs['sidechain'].num_nodes = complex_graphs['receptor'].num_nodes
-        protein.atom2residue = torch.tensor(atom2residue)
-        protein.residue_type = torch.tensor(residue_type)
         atom_position = complex_graphs['atom'].pos #NOTE: [num_atom, 3] and the atom index must be the same as the one in process_mols.py
         protein.node_position = atom_position
         # Init residue masks
@@ -353,7 +358,7 @@ class PDBBind(Dataset):
             lm_embeddings_chains_all = []
             if not os.path.exists(self.esm_embeddings_path): raise Exception('ESM embeddings path does not exist: ',self.esm_embeddings_path)
             for protein_path in self.protein_path_list:
-                embeddings_paths = sorted(glob.glob(os.path.join(self.esm_embeddings_path, os.path.basename(protein_path)) + '*'))
+                embeddings_paths = sorted(glob.glob(os.path.join(self.esm_embeddings_path, os.path.basename(protein_path).split('.')[0]) + '*'))
                 # pdb.set_trace()
                 lm_embeddings_chains = []
                 for embeddings_path in embeddings_paths:
@@ -380,7 +385,7 @@ class PDBBind(Dataset):
                 with tqdm(total=len(protein_paths_chunk), desc=f'loading complexes {i}/{len(protein_paths_chunk)//1000+1}') as pbar:
                     map_fn = p.imap_unordered if self.num_workers > 1 else map
                     for t in map_fn(self.get_complex, zip(protein_paths_chunk, lm_embeddings_chains, ligands_chunk, ligand_description_chunk, true_ligands_chunk)):
-                        complex_graphs.extend(t[0])
+                        complex_graphs.extend(t[0]) # t may be a tuple of two empty lists
                         rdkit_ligands.extend(t[1])
                         pbar.update()
                 if self.num_workers > 1: p.__exit__(None, None, None)
