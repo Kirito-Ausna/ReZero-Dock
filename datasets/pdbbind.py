@@ -1,6 +1,5 @@
 import binascii
 import glob
-import hashlib
 import os
 import pickle
 from collections import defaultdict
