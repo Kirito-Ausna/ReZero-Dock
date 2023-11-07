@@ -12,6 +12,7 @@ from tqdm import tqdm
 from datasets.pdbbind import read_mol
 from datasets.process_mols import read_molecule
 from utils.utils import read_strings_from_txt, get_symmetry_rmsd
+import pdb
 
 parser = ArgumentParser()
 parser.add_argument('--config', type=FileType(mode='r'), default=None)
@@ -41,6 +42,7 @@ min_self_distances_list = []
 without_rec_overlap_list = []
 start_time = time.time()
 for i, name in enumerate(tqdm(names)):
+    actual_num_predictions = args.num_predictions
     mol = read_mol(args.data_dir, name, remove_hs=True)
     mol = Chem.RemoveAllHs(mol)
     orig_ligand_pos = np.array(mol.GetConformer().GetPositions())
@@ -49,6 +51,10 @@ for i, name in enumerate(tqdm(names)):
         directory_with_name_list = [directory for directory in results_path_containments if name in directory]
         if directory_with_name_list == []:
             print('Did not find a directory for ', name, '. We are skipping that complex')
+            continue
+        # if directory is empty, we skip it
+        elif len(os.listdir(os.path.join(args.results_path, directory_with_name_list[0]))) == 0:
+            print('Directory ', directory_with_name_list[0], ' is empty. We are skipping that complex')
             continue
         else:
             directory_with_name = directory_with_name_list[0]
@@ -59,10 +65,22 @@ for i, name in enumerate(tqdm(names)):
             if args.file_to_exclude is not None:
                 file_paths = [path for path in file_paths if not args.file_to_exclude in path]
             file_path = [path for path in file_paths if f'rank{i+1}_' in path][0]
-            mol_pred = read_molecule(os.path.join(args.results_path, directory_with_name, file_path),remove_hs=True, sanitize=True)
-            mol_pred = Chem.RemoveAllHs(mol_pred)
+            try:
+                mol_pred = read_molecule(os.path.join(args.results_path, directory_with_name, file_path),remove_hs=True, sanitize=True)
+                mol_pred = Chem.RemoveAllHs(mol_pred)
+            except:
+                error_file = os.path.join(args.results_path, directory_with_name, file_path)
+                print('Could not read ', error_file, '. We are skipping that prediction')
+                actual_num_predictions = actual_num_predictions - 1
+                print('actual_num_predictions: ', actual_num_predictions)
+                if len(ligand_pos) == 0:
+                    ligand_pos.append(orig_ligand_pos)
+                else:
+                    ligand_pos.append(ligand_pos[-1])
+                continue
             ligand_pos.append(mol_pred.GetConformer().GetPositions())
             debug_paths.append(file_path)
+    
         ligand_pos = np.asarray(ligand_pos)
     else:
         if not os.path.exists(os.path.join(args.results_path, name, f'{"" if args.no_id_in_filename else name}{args.file_suffix}')): raise Exception('path did not exists:', os.path.join(args.results_path, name, f'{"" if args.no_id_in_filename else name}{args.file_suffix}'))
@@ -72,6 +90,7 @@ for i, name in enumerate(tqdm(names)):
             continue
         mol_pred = Chem.RemoveAllHs(mol_pred)
         ligand_pos = np.asarray([np.array(mol_pred.GetConformer(i).GetPositions()) for i in range(args.num_predictions)])
+    
     try:
         rmsd = get_symmetry_rmsd(mol, orig_ligand_pos, [l for l in ligand_pos], mol_pred)
     except Exception as e:
@@ -96,6 +115,7 @@ for i, name in enumerate(tqdm(names)):
     min_self_distances_list.append(np.min(self_distances, axis=(1, 2)))
     successful_names_list.append(name)
     without_rec_overlap_list.append(1 if name in names_no_rec_overlap else 0)
+
 performance_metrics = {}
 for overlap in ['', 'no_overlap_']:
     if 'no_overlap_' == overlap:
