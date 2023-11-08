@@ -215,7 +215,7 @@ def test_epoch(model, loader, device, t_to_sigma, loss_fn, test_sigma_intervals=
     # if test_sigma_intervals > 0: out.update(meter_all.summary())
     return out
 
-def get_metric(pred_protein, true_protein, metric):
+def get_pocket_metric(pred_protein, true_protein, metric):
     # assert pred_pos.shape == true_pos.shape
     pred_pos = pred_protein.node_position
     true_pos = true_protein.node_position
@@ -306,7 +306,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
 
         pred_protein = predictions_list[0]['sidechain']
         true_protein = orig_complex_graph['sidechain']
-        chi_ae = get_metric(pred_protein, true_protein, {})
+        chi_ae = get_pocket_metric(pred_protein, true_protein, {})
         for k, v in chi_ae.items():
             if k not in chi_metric:
                 chi_metric[k] = []

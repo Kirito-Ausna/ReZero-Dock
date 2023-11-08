@@ -220,14 +220,14 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
             write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
         #TODO: save pdb files with predicted sidechain comformations
         if not args.no_chi_angle:
-            pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pockect.pkl'), 'wb')) # save the true pocket object
+            pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pocket.pkl'), 'wb')) # save the true pocket object
             for rank, pos in enumerate(protein_atom_pos):
                 # read protein_path and ligand_description from the complex_name, to prevent the error of index shift when preprocessing in PDBBind class failded in some cases
-                mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pockect_pos=pos)
+                mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pocket_pos=pos)
                 if rank == 0: 
-                    pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords.pkl'), 'wb')) # save the predicted pocket comformation
+                    pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pocket_coords.pkl'), 'wb')) # save the predicted pocket comformation
                     mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein.pdb')) # save the predicted protein comformation(with pocket sidechain modification)
-                pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pockect_coords_confidence{confidence[rank]:.2f}.pkl'), 'wb')) # save the predicted pocket comformation
+                pickle.dump(pos, open(os.path.join(write_dir, f'rank{rank+1}_pocket_coords_confidence{confidence[rank]:.2f}.pkl'), 'wb')) # save the predicted pocket comformation
                 mod_prot.to_pdb(os.path.join(write_dir, f'rank{rank+1}_protein_confidence{confidence[rank]:.2f}.pdb')) # save the predicted protein comformation(with pocket sidechain modification)
 
         # save visualisation frames

@@ -8,10 +8,11 @@ from biopandas.pdb import PandasPdb
 from rdkit import Chem
 
 from tqdm import tqdm
-
+import re
 from datasets.pdbbind import read_mol
 from datasets.process_mols import read_molecule
-from utils.utils import read_strings_from_txt, get_symmetry_rmsd
+from utils.utils import read_strings_from_txt, get_symmetry_rmsd, get_pocket_rmsd
+import pickle
 import pdb
 
 parser = ArgumentParser()
@@ -36,6 +37,7 @@ results_path_containments = os.listdir(args.results_path)
 all_times = []
 successful_names_list = []
 rmsds_list = []
+pocket_rmsds_list = []
 centroid_distances_list = []
 min_cross_distances_list = []
 min_self_distances_list = []
@@ -59,15 +61,22 @@ for i, name in enumerate(tqdm(names)):
         else:
             directory_with_name = directory_with_name_list[0]
         ligand_pos = []
+        pocket_pos = []
         debug_paths = []
+        result_path = os.path.join(args.results_path, directory_with_name)
+        file_paths = sorted(os.listdir(result_path))
+        if args.file_to_exclude is not None:
+            file_paths = [path for path in file_paths if not args.file_to_exclude in path]
+        true_pocket = pickle.load(open(os.path.join(result_path, 'true_pockect'), 'rb'))
         for i in range(args.num_predictions):
-            file_paths = sorted(os.listdir(os.path.join(args.results_path, directory_with_name)))
-            if args.file_to_exclude is not None:
-                file_paths = [path for path in file_paths if not args.file_to_exclude in path]
-            file_path = [path for path in file_paths if f'rank{i+1}_' in path][0]
+            ligand_pttn = re.compile(f'*rank{i+1}_*.sdf')
+            pocket_pttn = re.compile(f'*rank{i+1}_*.pkl')
+            file_path = [path for path in file_paths if ligand_pttn.match(path)][0]
+            pckt_path = [path for path in file_paths if pocket_pttn.match(path)][0]
             try:
                 mol_pred = read_molecule(os.path.join(args.results_path, directory_with_name, file_path),remove_hs=True, sanitize=True)
                 mol_pred = Chem.RemoveAllHs(mol_pred)
+                pckt_pred_coords = pickle.load(open(os.path.join(result_path, pckt_path), 'rb'))
             except:
                 error_file = os.path.join(args.results_path, directory_with_name, file_path)
                 print('Could not read ', error_file, '. We are skipping that prediction')
@@ -75,14 +84,17 @@ for i, name in enumerate(tqdm(names)):
                 print('actual_num_predictions: ', actual_num_predictions)
                 if len(ligand_pos) == 0:
                     ligand_pos.append(orig_ligand_pos)
+                    pocket_pos.append(true_pocket.node_positions)
                 else:
                     ligand_pos.append(ligand_pos[-1])
+                    pocket_pos.append(pocket_pos[-1])
                 continue
             ligand_pos.append(mol_pred.GetConformer().GetPositions())
+            pocket_pos.append(pckt_pred_coords)
             debug_paths.append(file_path)
     
         ligand_pos = np.asarray(ligand_pos)
-    else:
+    else: #TODO: add support for single files with pocket evaluation
         if not os.path.exists(os.path.join(args.results_path, name, f'{"" if args.no_id_in_filename else name}{args.file_suffix}')): raise Exception('path did not exists:', os.path.join(args.results_path, name, f'{"" if args.no_id_in_filename else name}{args.file_suffix}'))
         mol_pred = read_molecule(os.path.join(args.results_path, name, f'{"" if args.no_id_in_filename else name}{args.file_suffix}'), remove_hs=True, sanitize=True)
         if mol_pred == None:
@@ -91,6 +103,7 @@ for i, name in enumerate(tqdm(names)):
         mol_pred = Chem.RemoveAllHs(mol_pred)
         ligand_pos = np.asarray([np.array(mol_pred.GetConformer(i).GetPositions()) for i in range(args.num_predictions)])
     
+    sc_rmsd, residue_rmsd = get_pocket_rmsd(true_pocket, pocket_pos) # a list of rmsd like the ligand rmsd
     try:
         rmsd = get_symmetry_rmsd(mol, orig_ligand_pos, [l for l in ligand_pos], mol_pred)
     except Exception as e:
@@ -98,6 +111,7 @@ for i, name in enumerate(tqdm(names)):
         rmsd = np.sqrt(((ligand_pos - orig_ligand_pos) ** 2).sum(axis=2).mean(axis=1))
 
     rmsds_list.append(rmsd)
+    
     centroid_distances_list.append(np.linalg.norm(ligand_pos.mean(axis=1) - orig_ligand_pos[None,:].mean(axis=1), axis=1))
 
     rec_path = os.path.join(args.data_dir, name, f'{name}_protein_processed.pdb')

@@ -60,10 +60,10 @@ class PDBFile:
 
 class ModifiedPDB:
     # implementation for save pdb file with modified pocket sidechain coordinates
-    def __init__(self, pdb_path, ligand_description, pockect_pos) -> None:
+    def __init__(self, pdb_path, ligand_description, pocket_pos) -> None:
         # self.pdb_path = pdb_path
         # self.mol = mol
-        self.pocket_pos = pockect_pos
+        self.pocket_pos = pocket_pos
         prot = parse_pdb_from_path(pdb_path)
         self.prot = copy.deepcopy(prot)
         mol = MolFromSmiles(ligand_description)

@@ -146,6 +146,8 @@ def get_symmetry_rmsd(mol, coords1, coords2, mol2=None):
         )
         return RMSD
 
+def get_pocket_rmsd(true_pocket, pred_pockets):
+    pass
 
 class TimeoutException(Exception): pass
 
