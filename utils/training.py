@@ -215,9 +215,9 @@ def test_epoch(model, loader, device, t_to_sigma, loss_fn, test_sigma_intervals=
     # if test_sigma_intervals > 0: out.update(meter_all.summary())
     return out
 
-def get_pocket_metric(pred_protein, true_protein, metric):
+def get_pocket_metric(pred_pos, true_protein, metric):
     # assert pred_pos.shape == true_pos.shape
-    pred_pos = pred_protein.node_position
+    # pred_pos = pred_protein.node_position
     true_pos = true_protein.node_position
     protein = true_protein
 
@@ -228,15 +228,20 @@ def get_pocket_metric(pred_protein, true_protein, metric):
     symm_true_pos_per_residue = _get_symm_atoms(true_pos_per_residue, protein.residue_type)
 
     # Symmetric alignment
-    rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.sidechain37_mask)
-    sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue,
+    sc_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.sidechain37_mask)
+    sc_sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue,
                                                 protein.sidechain37_mask)
-    sym_replace_mask = rmsd_per_residue > sym_rmsd_per_residue
+    rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.atom37_mask)
+    sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue, protein.atom37_mask)
+    
+    sym_replace_mask = sc_rmsd_per_residue > sc_sym_rmsd_per_residue
+    sc_rmsd_per_residue[sym_replace_mask] = sc_sym_rmsd_per_residue[sym_replace_mask]
     rmsd_per_residue[sym_replace_mask] = sym_rmsd_per_residue[sym_replace_mask]
+    metric["sc_atom_rmsd_per_residue"] = sc_rmsd_per_residue
+    metric['atom_rmsd_per_residue'] = rmsd_per_residue
+
     true_pos_per_residue[sym_replace_mask] = symm_true_pos_per_residue[sym_replace_mask]
     true_pos = true_pos_per_residue[protein.atom2residue, protein.atom_name]
-    metric["atom_rmsd_per_residue"] = rmsd_per_residue
-
     pred_chi = rotamer.get_chis(protein, pred_pos)
     true_chi = rotamer.get_chis(protein, true_pos)
     chi_diff = (pred_chi - true_chi).abs()
@@ -306,7 +311,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
 
         pred_protein = predictions_list[0]['sidechain']
         true_protein = orig_complex_graph['sidechain']
-        chi_ae = get_pocket_metric(pred_protein, true_protein, {})
+        chi_ae = get_pocket_metric(pred_protein.node_position, true_protein, {})
         for k, v in chi_ae.items():
             if k not in chi_metric:
                 chi_metric[k] = []
