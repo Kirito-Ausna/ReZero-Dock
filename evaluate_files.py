@@ -1,7 +1,7 @@
 # small script to extract the ligand and save it in a separate file because GNINA will use the ligand position as initial pose
 import os
 from argparse import FileType, ArgumentParser
-
+import torch
 import numpy as np
 from biopandas.pdb import PandasPdb
 from rdkit import Chem
@@ -20,7 +20,6 @@ parser.add_argument('--config', type=FileType(mode='r'), default=None)
 parser.add_argument('--data_dir', type=str, default='data/PDBBind_processed', help='')
 parser.add_argument('--results_path', type=str, default='results/user_predictions_testset', help='Path to folder with trained model and hyperparameters')
 parser.add_argument('--file_suffix', type=str, default='_baseline_ligand.pdb', help='Path to folder with trained model and hyperparameters')
-parser.add_argument('--project', type=str, default='ligbind_inf', help='')
 parser.add_argument('--file_to_exclude', type=str, default=None, help='')
 parser.add_argument('--all_dirs_in_results', action='store_true', default=True, help='Evaluate all directories in the results path instead of using directly looking for the names')
 parser.add_argument('--num_predictions', type=int, default=10, help='')
@@ -86,10 +85,10 @@ for i, name in enumerate(tqdm(names)):
         file_paths = sorted(os.listdir(result_path))
         if args.file_to_exclude is not None:
             file_paths = [path for path in file_paths if not args.file_to_exclude in path]
-        true_pocket = pickle.load(open(os.path.join(result_path, 'true_pockect'), 'rb'))
+        true_pocket = pickle.load(open(os.path.join(result_path, 'true_pockect.pkl'), 'rb'))
         for i in range(args.num_predictions):
-            ligand_pttn = re.compile(f'*rank{i+1}_*.sdf')
-            pocket_pttn = re.compile(f'*rank{i+1}_*.pkl')
+            ligand_pttn = re.compile(rf'rank{i+1}_.*\.sdf$')
+            pocket_pttn = re.compile(rf'rank{i+1}_.*\.pkl$')
             file_path = [path for path in file_paths if ligand_pttn.match(path)][0]
             pckt_path = [path for path in file_paths if pocket_pttn.match(path)][0]
             try:
@@ -109,7 +108,7 @@ for i, name in enumerate(tqdm(names)):
                     pocket_pos.append(pocket_pos[-1])
                 continue
             ligand_pos.append(mol_pred.GetConformer().GetPositions())
-            pocket_pos.append(pckt_pred_coords)
+            pocket_pos.append(torch.from_numpy(pckt_pred_coords))
             debug_paths.append(file_path)
     
         ligand_pos = np.asarray(ligand_pos)
@@ -157,6 +156,7 @@ for i, name in enumerate(tqdm(names)):
 top1_performance_metrics = {}
 top5_performance_metrics = {}
 top10_performance_metrics = {}
+report_metrics = {}
 logs = {}
 for overlap in ['', 'no_overlap_']:
     if 'no_overlap_' == overlap:
@@ -184,23 +184,18 @@ for overlap in ['', 'no_overlap_']:
     np.save(os.path.join(args.results_path, f'{overlap}centroid_distances.npy'), centroid_distances)
     np.save(os.path.join(args.results_path, f'{overlap}min_cross_distances.npy'), np.array(min_cross_distances))
     np.save(os.path.join(args.results_path, f'{overlap}min_self_distances.npy'), np.array(min_self_distances))
+
 # Top 1 rmsd, sc_rmsd, residue_rmsd and centroid distance
     top1_performance_metrics.update({
         f'{overlap}steric_clash_fraction': (100 * (min_cross_distances < 0.4).sum() / len(min_cross_distances) / args.num_predictions).__round__(2),
         f'{overlap}self_intersect_fraction': (100 * (min_self_distances < 0.4).sum() / len(min_self_distances) / args.num_predictions).__round__(2),
 
         f'{overlap}mean_rmsd': rmsds[:,0].mean(),
-        f'{overlap}rmsds_below_2': (100 * (rmsds[:,0] < 2).sum() / len(rmsds[:,0])),
-        f'{overlap}rmsds_below_5': (100 * (rmsds[:,0] < 5).sum() / len(rmsds[:,0])),
         f'{overlap}rmsds_percentile_25': np.percentile(rmsds[:,0], 25).round(2),
-        f'{overlap}rmsds_percentile_50': np.percentile(rmsds[:,0], 50).round(2), # median
         f'{overlap}rmsds_percentile_75': np.percentile(rmsds[:,0], 75).round(2),
 
         f'{overlap}mean_sc_rmsd': sc_rmsds[:,0].mean(),
-        f'{overlap}sc_rmsds_below_1': (100 * (sc_rmsds[:,0] < 1).sum() / len(sc_rmsds[:,0])),
-        f'{overlap}sc_rmsds_below_3': (100 * (sc_rmsds[:,0] < 3).sum() / len(sc_rmsds[:,0])),
         f'{overlap}sc_rmsds_percentile_25': np.percentile(sc_rmsds[:,0], 25).round(2),
-        f'{overlap}sc_rmsds_percentile_50': np.percentile(sc_rmsds[:,0], 50).round(2), # median
         f'{overlap}sc_rmsds_percentile_75': np.percentile(sc_rmsds[:,0], 75).round(2),
 
         f'{overlap}mean_residue_rmsd': residue_rmsds[:,0].mean(),
@@ -217,6 +212,15 @@ for overlap in ['', 'no_overlap_']:
         f'{overlap}centroid_percentile_50': np.percentile(centroid_distances[:,0], 50).round(2),
         f'{overlap}centroid_percentile_75': np.percentile(centroid_distances[:,0], 75).round(2),
     })
+    if overlap == '':
+        report_metrics.update({
+            f'{overlap}rmsds_below_2': (100 * (rmsds[:,0] < 2).sum() / len(rmsds[:,0])),
+            f'{overlap}rmsds_below_5': (100 * (rmsds[:,0] < 5).sum() / len(rmsds[:,0])),
+            f'{overlap}rmsds_percentile_50': np.percentile(rmsds[:,0], 50).round(2), # median
+            f'{overlap}sc_rmsds_below_1': (100 * (sc_rmsds[:,0] < 1).sum() / len(sc_rmsds[:,0])),
+            f'{overlap}sc_rmsds_below_2': (100 * (sc_rmsds[:,0] < 2).sum() / len(sc_rmsds[:,0])),
+            f'{overlap}sc_rmsds_percentile_50': np.percentile(sc_rmsds[:,0], 50).round(2), # median
+        })  
 # Best of Top 5 rmsd, sc_rmsd, residue_rmsd and centroid distance
     top5_rmsds = np.min(rmsds[:, :5], axis=1)
     top5_sc_rmsds = np.min(sc_rmsds[:, :5], axis=1)
@@ -229,30 +233,38 @@ for overlap in ['', 'no_overlap_']:
         f'{overlap}top5_steric_clash_fraction': (100 * (top5_min_cross_distances < 0.4).sum() / len(top5_min_cross_distances)).__round__(2),
         f'{overlap}top5_self_intersect_fraction': (100 * (top5_min_self_distances < 0.4).sum() / len(top5_min_self_distances)).__round__(2),
 
-        f'{overlap}top5_rmsds_below_2': (100 * (top5_rmsds < 2).sum() / len(top5_rmsds)).__round__(2),
-        f'{overlap}top5_rmsds_below_5': (100 * (top5_rmsds < 5).sum() / len(top5_rmsds)).__round__(2),
+        f'{overlap}top5_mean_rmsd': top5_rmsds[:,0].mean(),
         f'{overlap}top5_rmsds_percentile_25': np.percentile(top5_rmsds, 25).round(2),
-        f'{overlap}top5_rmsds_percentile_50': np.percentile(top5_rmsds, 50).round(2),
         f'{overlap}top5_rmsds_percentile_75': np.percentile(top5_rmsds, 75).round(2),
 
-        f'{overlap}top5_sc_rmsds_below_1': (100 * (top5_sc_rmsds < 1).sum() / len(top5_sc_rmsds)).__round__(2),
-        f'{overlap}top5_sc_rmsds_below_3': (100 * (top5_sc_rmsds < 3).sum() / len(top5_sc_rmsds)).__round__(2),
+        f'{overlap}top5_mean_sc_rmsd': top5_sc_rmsds[:,0].mean(),
         f'{overlap}top5_sc_rmsds_percentile_25': np.percentile(top5_sc_rmsds, 25).round(2),
-        f'{overlap}top5_sc_rmsds_percentile_50': np.percentile(top5_sc_rmsds, 50).round(2),
         f'{overlap}top5_sc_rmsds_percentile_75': np.percentile(top5_sc_rmsds, 75).round(2),
 
+        f'{overlap}top5_mean_residue_rmsd': top5_residue_rmsds[:,0].mean(),
         f'{overlap}top5_residue_rmsds_below_2': (100 * (top5_residue_rmsds < 2).sum() / len(top5_residue_rmsds)).__round__(2),
         f'{overlap}top5_residue_rmsds_below_5': (100 * (top5_residue_rmsds < 5).sum() / len(top5_residue_rmsds)).__round__(2),
         f'{overlap}top5_residue_rmsds_percentile_25': np.percentile(top5_residue_rmsds, 25).round(2),
         f'{overlap}top5_residue_rmsds_percentile_50': np.percentile(top5_residue_rmsds, 50).round(2),
         f'{overlap}top5_residue_rmsds_percentile_75': np.percentile(top5_residue_rmsds, 75).round(2),
 
+        f'{overlap}top5_mean_centroid': top5_centroid_distances[:,0].mean().__round__(2), # TODO: check if this is correct
         f'{overlap}top5_centroid_below_2': (100 * (top5_centroid_distances < 2).sum() / len(top5_centroid_distances)).__round__(2),
         f'{overlap}top5_centroid_below_5': (100 * (top5_centroid_distances < 5).sum() / len(top5_centroid_distances)).__round__(2),
         f'{overlap}top5_centroid_percentile_25': np.percentile(top5_centroid_distances, 25).round(2),
         f'{overlap}top5_centroid_percentile_50': np.percentile(top5_centroid_distances, 50).round(2),
         f'{overlap}top5_centroid_percentile_75': np.percentile(top5_centroid_distances, 75).round(2),
     })
+
+    if overlap == '':
+        report_metrics.update({
+            f'{overlap}top5_rmsds_below_2': (100 * (top5_rmsds < 2).sum() / len(top5_rmsds)),
+            f'{overlap}top5_rmsds_below_5': (100 * (top5_rmsds < 5).sum() / len(top5_rmsds)),
+            f'{overlap}top5_rmsds_percentile_50': np.percentile(top5_rmsds, 50).round(2), # median
+            f'{overlap}top5_sc_rmsds_below_1': (100 * (top5_sc_rmsds < 1).sum() / len(top5_sc_rmsds)),
+            f'{overlap}top5_sc_rmsds_below_2': (100 * (top5_sc_rmsds < 2).sum() / len(top5_sc_rmsds)),
+            f'{overlap}top5_sc_rmsds_percentile_50': np.percentile(top5_sc_rmsds, 50).round(2), # median
+        })
 
 # Best of Top 10
     top10_rmsds = np.min(rmsds[:, :10], axis=1)
@@ -265,24 +277,28 @@ for overlap in ['', 'no_overlap_']:
         f'{overlap}top10_self_intersect_fraction': (100 * (top10_min_self_distances < 0.4).sum() / len(top10_min_self_distances)).__round__(2),
         f'{overlap}top10_steric_clash_fraction': ( 100 * (top10_min_cross_distances < 0.4).sum() / len(top10_min_cross_distances)).__round__(2),
 
+        f'{overlap}top10_mean_rmsd': top10_rmsds[:,0].mean(),
         f'{overlap}top10_rmsds_below_2': (100 * (top10_rmsds < 2).sum() / len(top10_rmsds)).__round__(2),
         f'{overlap}top10_rmsds_below_5': (100 * (top10_rmsds < 5).sum() / len(top10_rmsds)).__round__(2),
         f'{overlap}top10_rmsds_percentile_25': np.percentile(top10_rmsds, 25).round(2),
         f'{overlap}top10_rmsds_percentile_50': np.percentile(top10_rmsds, 50).round(2),
         f'{overlap}top10_rmsds_percentile_75': np.percentile(top10_rmsds, 75).round(2),
-
+        
+        f'{overlap}top10_mean_sc_rmsd': top10_sc_rmsds[:,0].mean(),
         f'{overlap}top10_sc_rmsds_below_1': (100 * (top10_sc_rmsds < 1).sum() / len(top10_sc_rmsds)).__round__(2),
-        f'{overlap}top10_sc_rmsds_below_3': (100 * (top10_sc_rmsds < 3).sum() / len(top10_sc_rmsds)).__round__(2),
+        f'{overlap}top10_sc_rmsds_below_2': (100 * (top10_sc_rmsds < 2).sum() / len(top10_sc_rmsds)).__round__(2),
         f'{overlap}top10_sc_rmsds_percentile_25': np.percentile(top10_sc_rmsds, 25).round(2),
         f'{overlap}top10_sc_rmsds_percentile_50': np.percentile(top10_sc_rmsds, 50).round(2),
         f'{overlap}top10_sc_rmsds_percentile_75': np.percentile(top10_sc_rmsds, 75).round(2),
 
+        f'{overlap}top10_mean_residue_rmsd': top10_residue_rmsds[:,0].mean(),
         f'{overlap}top10_residue_rmsds_below_2': (100 * (top10_residue_rmsds < 2).sum() / len(top10_residue_rmsds)).__round__(2),
         f'{overlap}top10_residue_rmsds_below_5': (100 * (top10_residue_rmsds < 5).sum() / len(top10_residue_rmsds)).__round__(2),
         f'{overlap}top10_residue_rmsds_percentile_25': np.percentile(top10_residue_rmsds, 25).round(2),
         f'{overlap}top10_residue_rmsds_percentile_50': np.percentile(top10_residue_rmsds, 50).round(2),
         f'{overlap}top10_residue_rmsds_percentile_75': np.percentile(top10_residue_rmsds, 75).round(2),
 
+        f'{overlap}top10_mean_centroid': top10_centroid_distances[:,0].mean().__round__(2), # TODO: check if this is correct
         f'{overlap}top10_centroid_below_2': (100 * (top10_centroid_distances < 2).sum() / len(top10_centroid_distances)).__round__(2),
         f'{overlap}top10_centroid_below_5': (100 * (top10_centroid_distances < 5).sum() / len(top10_centroid_distances)).__round__(2),
         f'{overlap}top10_centroid_percentile_25': np.percentile(top10_centroid_distances, 25).round(2),
@@ -291,14 +307,18 @@ for overlap in ['', 'no_overlap_']:
     })
 for k in top1_performance_metrics:
     print(k, top1_performance_metrics[k])
-    print("-----------------------------------------------------------------------------")
     logs['top1_metric/' + k] = top1_performance_metrics[k]
-for k in top1_performance_metrics:
-    print(k, top1_performance_metrics[k])
+print("-----------------------------------------------------------------------------")
+for k in top5_performance_metrics:
+    print(k, top5_performance_metrics[k])
     logs['top5_metric/' + k] = top5_performance_metrics[k]
+print("-----------------------------------------------------------------------------")
 for k in top10_performance_metrics:
     # print(k, top10_performance_metrics[k])
     logs['top10_metric/' + k] = top10_performance_metrics[k]
+
+for k in report_metrics:
+    logs['report_metrics/' + k] = report_metrics[k]
 
 if args.wandb:
     wandb.log(logs)

@@ -470,8 +470,9 @@ class PDBBind(Dataset):
                 print(f'Skipping {name} because of the error:')
                 print(e)
                 failed_indices.append(i)
-                continue            
-            self.chi_torsion_features(complex_graph, rec)
+                continue
+            if self.all_atoms: # all atoms graph           
+                self.chi_torsion_features(complex_graph, rec)
             protein_center = torch.mean(complex_graph['receptor'].pos, dim=0, keepdim=True)
             complex_graph['receptor'].pos -= protein_center
             if self.all_atoms:

@@ -157,6 +157,7 @@ def get_pocket_rmsd(true_pocket, pocket_positions):
 
     for pred_pos in pocket_positions:
         metric = get_pocket_metric(pred_pos, true_pocket, {})
+        # pdb.set_trace()
         sc_rmsds.append(metric['sc_atom_rmsd_per_residue'].mean())
         residue_rmsds.append(metric['atom_rmsd_per_residue'].mean())
     

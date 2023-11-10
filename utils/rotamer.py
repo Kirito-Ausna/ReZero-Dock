@@ -627,8 +627,9 @@ def _get_symm_atoms(pos_per_residue, residue_type):
     return sym_pos_per_residue
 
 def _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, mask):
-    pred_pos_per_residue = pred_pos_per_residue[mask]
-    true_pos_per_residue = true_pos_per_residue[mask]
+    # pdb.set_trace()
+    # pred_pos_per_residue = pred_pos_per_residue[mask]
+    # true_pos_per_residue = true_pos_per_residue[mask]
     sd = torch.square(pred_pos_per_residue - true_pos_per_residue).sum(dim=-1)
     msd = sd.sum(dim=-1) / mask.sum(dim=-1).clamp(min=1)
     rmsd = msd.sqrt()
