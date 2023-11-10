@@ -71,7 +71,7 @@ else:
     protein_sequence_list = [args.protein_sequence]
     ligand_description_list = [args.ligand_description]
 
-complex_name_list = [name if name is not None else f"complex_{i}" for i, name in enumerate(complex_name_list)]
+# complex_name_list = [name if name is not None else f"complex_{i}" for i, name in enumerate(complex_name_list)]
 for i, name in enumerate(complex_name_list):
     if name is None:
         complex_name_list[i] = f'complex_{i}'
@@ -169,7 +169,8 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
-        randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.no_chi_angle, score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
+        randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.no_chi_angle, 
+                           score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
         lig = orig_complex_graph.mol[0]
         true_pockect = orig_complex_graph['sidechain']
         # restore the original pocket center

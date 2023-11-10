@@ -16,7 +16,6 @@ from models.score_model import TensorProductScoreModel as CGScoreModel
 from utils.diffusion_utils import get_timestep_embedding
 from spyrmsd import rmsd, molecule
 import pdb
-from utils.training import get_pocket_metric
 
 def get_obrmsd(mol1_path, mol2_path, cache_name=None):
     cache_name = datetime.now().strftime('date%d-%m_time%H-%M-%S.%f') if cache_name is None else cache_name
@@ -152,6 +151,7 @@ def get_pocket_rmsd(true_pocket, pocket_positions):
     true_pocket: one protein object just like in training
     pocket_positions: a list of positions of the predicted pocket conformations
     """
+    from utils.training import get_pocket_metric
     sc_rmsds = []
     residue_rmsds = []
 
