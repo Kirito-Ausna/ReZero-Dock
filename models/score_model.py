@@ -96,7 +96,7 @@ class TensorProductScoreModel(torch.nn.Module):
                  center_max_distance=30, distance_embed_dim=32, cross_distance_embed_dim=32, no_torsion=False,
                  scale_by_sigma=True, use_second_order_repr=False, batch_norm=True,
                  dynamic_max_cross=False, dropout=0.0, lm_embedding_type=None, confidence_mode=False,
-                 confidence_dropout=0, confidence_no_batchnorm=False, num_confidence_outputs=1):
+                 confidence_dropout=0, confidence_no_batchnorm=False, num_confidence_outputs=1, **kwargs):
         super(TensorProductScoreModel, self).__init__()
         self.t_to_sigma = t_to_sigma
         self.in_lig_edge_features = in_lig_edge_features
@@ -234,9 +234,9 @@ class TensorProductScoreModel(torch.nn.Module):
 
     def forward(self, data):
         if not self.confidence_mode:
-            tr_sigma, rot_sigma, tor_sigma = self.t_to_sigma(*[data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor']])
+            tr_sigma, rot_sigma, tor_sigma, _ = self.t_to_sigma(*[data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']])
         else:
-            tr_sigma, rot_sigma, tor_sigma = [data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor']]
+            tr_sigma, rot_sigma, tor_sigma, _ = [data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']]
 
         # build ligand graph
         lig_node_attr, lig_edge_index, lig_edge_attr, lig_edge_sh = self.build_lig_conv_graph(data)

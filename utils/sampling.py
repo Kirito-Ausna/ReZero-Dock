@@ -48,7 +48,7 @@ def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_
             
 
 def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_schedule, chi_schedule, device, t_to_sigma, model_args,
-             no_random=False, ode=False, visualization_list=None, confidence_model=None, confidence_data_list=None,
+             no_random=False, ode=False, no_chi_angle=False, visualization_list=None, confidence_model=None, confidence_data_list=None,
              confidence_model_args=None, batch_size=32, no_final_step_noise=False):
     N = len(data_list)
 
@@ -67,19 +67,21 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
             # pdb.set_trace()
             b = complex_graph_batch.num_graphs
             complex_graph_batch = complex_graph_batch.to(device)
-            batch_index = complex_graph_batch['atom'].batch # [num_atoms]
-            protein = complex_graph_batch['sidechain']
-            # calculate the offset of each protein
-            offset = 0
-            # check if protein.atom2residue is already batched
-            # num_residue1 = protein.num_residue[0]
-            if b != 1: # only handle mini-batch
-                end_last = protein.atom2residue[batch_index == 0][-1]
-                begin_first = protein.atom2residue[batch_index == 1][0]
-                if end_last + 1 != begin_first:
-                    for i in range(b):
-                        protein.atom2residue[batch_index == i] += offset
-                        offset += protein.num_residue[i]
+
+            if model_args.all_atoms: # handle batch when including sidechain graph
+                batch_index = complex_graph_batch['atom'].batch # [num_atoms]
+                protein = complex_graph_batch['sidechain']
+                # calculate the offset of each protein
+                offset = 0
+                # check if protein.atom2residue is already batched
+                # num_residue1 = protein.num_residue[0]
+                if b != 1: # only handle mini-batch
+                    end_last = protein.atom2residue[batch_index == 0][-1]
+                    begin_first = protein.atom2residue[batch_index == 1][0]
+                    if end_last + 1 != begin_first:
+                        for i in range(b):
+                            protein.atom2residue[batch_index == i] += offset
+                            offset += protein.num_residue[i]
             # pdb.set_trace()
             # causal sidechain mask
             # protein.num_nodes is automatically calculated by pytorch geometric, don't need sum(protein.num_residue)
@@ -89,28 +91,31 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
             set_time(complex_graph_batch, t_tr, t_rot, t_tor, t_chi, b, model_args.all_atoms, device)
             # pdb.set_trace()
             with torch.no_grad():
+                if not no_chi_angle:
                 # tr_score, rot_score, tor_score, chi_score = model(complex_graph_batch)
-                for chi_id in range(NUM_CHI_ANGLES):
-                    # pdb.set_trace()
-                    chis = rotamer.get_chis(protein, protein.node_position) # all chi angles including currently unchanged angles
-                    # predict score for each chi angle, tr, rot and tor score will also be predicted autoregressively
-                    #NOTE: in My implementation remove_by_chi will modify the complex_graph_batch directly for avoiding deep copy in training
-                    chi_protein_bacth = copy.deepcopy(complex_graph_batch)
-                    chi_protein_batch = rotamer.remove_by_chi(chi_protein_bacth, chi_id)
-                    chi_protein_batch.chi_id = chi_id
-                    tr_score, rot_score, tor_score, chi_score = model.predict(chi_protein_batch, sampling=True)
-                    # chi_score = chi_pred[0]
-                    # step backward for chi angle and predict next chi. It could be noisy but I have no choise
-                    chis = model.so2_periodic[0].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_1pi_periodic_mask)
-                    chis = model.so2_periodic[1].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_2pi_periodic_mask)
-                    # pdb.set_trace()
-                    protein = rotamer.set_chis(protein, chis)
-                    # Modify the complex graph according to protein dict
-                    complex_graph_batch['atom'].pos = protein.node_position
-                    atom_coords = protein.node_position
-                    atoms_edge_index = radius_graph(atom_coords, model_args.atom_radius, complex_graph_batch['atom'].batch,
-                                                max_num_neighbors=model_args.atom_max_neighbors if model_args.atom_max_neighbors else 1000)
-                    complex_graph_batch['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index                    
+                    for chi_id in range(NUM_CHI_ANGLES):
+                        # pdb.set_trace()
+                        chis = rotamer.get_chis(protein, protein.node_position) # all chi angles including currently unchanged angles
+                        # predict score for each chi angle, tr, rot and tor score will also be predicted autoregressively
+                        #NOTE: in My implementation remove_by_chi will modify the complex_graph_batch directly for avoiding deep copy in training
+                        chi_protein_bacth = copy.deepcopy(complex_graph_batch)
+                        chi_protein_batch = rotamer.remove_by_chi(chi_protein_bacth, chi_id)
+                        chi_protein_batch.chi_id = chi_id
+                        tr_score, rot_score, tor_score, chi_score = model.predict(chi_protein_batch, sampling=True)
+                        # chi_score = chi_pred[0]
+                        # step backward for chi angle and predict next chi. It could be noisy but I have no choise
+                        chis = model.so2_periodic[0].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_1pi_periodic_mask)
+                        chis = model.so2_periodic[1].step(chis, chi_score, chi_sigma, dt_chi, chi_protein_bacth['sidechain'].chi_2pi_periodic_mask)
+                        # pdb.set_trace()
+                        protein = rotamer.set_chis(protein, chis)
+                        # Modify the complex graph according to protein dict
+                        complex_graph_batch['atom'].pos = protein.node_position
+                        atom_coords = protein.node_position
+                        atoms_edge_index = radius_graph(atom_coords, model_args.atom_radius, complex_graph_batch['atom'].batch,
+                                                    max_num_neighbors=model_args.atom_max_neighbors if model_args.atom_max_neighbors else 1000)
+                        complex_graph_batch['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
+                else:
+                    tr_score, rot_score, tor_score = model(complex_graph_batch)                    
 
             tr_g = tr_sigma * torch.sqrt(torch.tensor(2 * np.log(model_args.tr_sigma_max / model_args.tr_sigma_min)))
             rot_g = 2 * rot_sigma * torch.sqrt(torch.tensor(np.log(model_args.rot_sigma_max / model_args.rot_sigma_min)))
@@ -140,7 +145,6 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                 tor_perturb = None
 
             # Apply noise
-            # pdb.set_trace()
             new_data_list.extend([modify_conformer(complex_graph, tr_perturb[i:i + 1], rot_perturb[i:i + 1].squeeze(0),
                                           tor_perturb[i * torsions_per_molecule:(i + 1) * torsions_per_molecule] if not model_args.no_torsion else None)
                          for i, complex_graph in enumerate(complex_graph_batch.to('cpu').to_data_list())])
@@ -156,6 +160,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
             loader = DataLoader(data_list, batch_size=batch_size)
             confidence_loader = iter(DataLoader(confidence_data_list, batch_size=batch_size))
             confidence = []
+            # pdb.set_trace()
             for complex_graph_batch in loader:
                 complex_graph_batch = complex_graph_batch.to(device)
                 if confidence_data_list is not None:

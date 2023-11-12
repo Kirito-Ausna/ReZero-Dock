@@ -125,13 +125,16 @@ else:
     confidence_test_dataset = None
 
 t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
-so2_1pi_periodic = SO2VESchedule(pi_periodic=True, cache_folder=score_model_args.diffusion_cache_folder, 
-                                    sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
-                                    annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
-so2_2pi_periodic = SO2VESchedule(pi_periodic=False, cache_folder=score_model_args.diffusion_cache_folder, 
-                                    sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
-                                    annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
-so2_periodic = [so2_1pi_periodic, so2_2pi_periodic]
+if not args.no_chi_angle:
+    so2_1pi_periodic = SO2VESchedule(pi_periodic=True, cache_folder=score_model_args.diffusion_cache_folder, 
+                                        sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
+                                        annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
+    so2_2pi_periodic = SO2VESchedule(pi_periodic=False, cache_folder=score_model_args.diffusion_cache_folder, 
+                                        sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
+                                        annealed_temp=score_model_args.chi_annealed_temp, mode=score_model_args.chi_mode)
+    so2_periodic = [so2_1pi_periodic, so2_2pi_periodic]
+else:
+    so2_periodic = None
 model = get_model(score_model_args, device, t_to_sigma=t_to_sigma, no_parallel=True, so2_periodic=so2_periodic)
 state_dict = torch.load(f'{args.model_dir}/{args.ckpt}', map_location=torch.device('cpu'))
 model.load_state_dict(state_dict, strict=True)
@@ -139,7 +142,7 @@ model = model.to(device)
 model.eval()
 
 if args.confidence_model_dir is not None:
-    confidence_model = get_model(confidence_args, device, t_to_sigma=t_to_sigma, no_parallel=True, confidence_mode=True, so2_periodic=None)
+    confidence_model = get_model(confidence_args, device, t_to_sigma=t_to_sigma, no_parallel=True, confidence_mode=True, so2_periodic=None, no_chi_angle=args.no_chi_angle)
     state_dict = torch.load(f'{args.confidence_model_dir}/{args.confidence_ckpt}', map_location=torch.device('cpu'))
     confidence_model.load_state_dict(state_dict, strict=True)
     confidence_model = confidence_model.to(device)
@@ -161,20 +164,21 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
     try:
         if confidence_test_dataset is not None and args.no_chi_angle:
             confidence_complex_graph = confidence_test_dataset[idx]
-            if not confidence_complex_graph.success:
-                skipped += 1
-                print(f"HAPPENING | The confidence dataset did not contain {orig_complex_graph.name}. We are skipping this complex.")
-                continue
+            # if not confidence_complex_graph.success:
+            #     skipped += 1
+            #     print(f"HAPPENING | The confidence dataset did not contain {orig_complex_graph.name}. We are skipping this complex.")
+            #     continue
             confidence_data_list = [copy.deepcopy(confidence_complex_graph) for _ in range(N)]
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
-        randomize_position(data_list, score_model_args.no_torsion, False, score_model_args.no_chi_angle, 
-                           score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
+        randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_angle, 
+                            score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
         lig = orig_complex_graph.mol[0]
-        true_pockect = orig_complex_graph['sidechain']
-        # restore the original pocket center
-        true_pockect.node_position = true_pockect.node_position + orig_complex_graph.original_center
+        if not args.no_chi_angle:
+            true_pockect = orig_complex_graph['sidechain']
+            # restore the original pocket center
+            true_pockect.node_position = true_pockect.node_position + orig_complex_graph.original_center
         # initialize visualisation
         # pdb = None
         if args.save_visualisation:
@@ -195,9 +199,10 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
                                             device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
                                             visualization_list=visualization_list, confidence_model=confidence_model,
                                             confidence_data_list=confidence_data_list, confidence_model_args=confidence_args,
-                                            batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise)
+                                            batch_size=args.batch_size, no_final_step_noise=args.no_final_step_noise, no_chi_angle=args.no_chi_angle)
         ligand_pos = np.asarray([complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
-        protein_atom_pos = np.asarray([complex_graph['atom'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
+        if not args.no_chi_angle:
+            protein_atom_pos = np.asarray([complex_graph['atom'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in data_list])
         # reorder predictions based on confidence output
         if confidence is not None and isinstance(confidence_args.rmsd_classification_cutoff, list):
             confidence = confidence[:, 0]
@@ -206,7 +211,8 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
             re_order = np.argsort(confidence)[::-1]
             confidence = confidence[re_order]
             ligand_pos = ligand_pos[re_order]
-            protein_atom_pos = protein_atom_pos[re_order]
+            if not args.no_chi_angle:
+                protein_atom_pos = protein_atom_pos[re_order]
 
         # save predictions
         protein_path = orig_complex_graph["name"][0].split('____')[0]
@@ -219,7 +225,7 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
             if score_model_args.remove_hs: mol_pred = RemoveHs(mol_pred)
             if rank == 0: write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}.sdf'))
             write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
-        #TODO: save pdb files with predicted sidechain comformations
+
         if not args.no_chi_angle:
             pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pocket.pkl'), 'wb')) # save the true pocket object
             for rank, pos in enumerate(protein_atom_pos):

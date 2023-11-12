@@ -83,7 +83,7 @@ def get_optimizer_and_scheduler(args, model, scheduler_mode='min'):
     return optimizer, scheduler
 
 
-def get_model(args, device, t_to_sigma, so2_periodic, no_parallel=False, confidence_mode=False):
+def get_model(args, device, t_to_sigma, so2_periodic, no_parallel=False, confidence_mode=False, no_chi_angle=False):
     if 'all_atoms' in args and args.all_atoms:
         model_class = AAScoreModel
     else:
@@ -101,7 +101,7 @@ def get_model(args, device, t_to_sigma, so2_periodic, no_parallel=False, confide
                         so2_periodic=so2_periodic,
                         device=device,
                         no_torsion=args.no_torsion,
-                        no_sidechain=True if confidence_mode else args.no_chi_angle,
+                        no_sidechain=True if confidence_mode else no_chi_angle,
                         timestep_emb_func=timestep_emb_func,
                         num_conv_layers=args.num_conv_layers,
                         lig_max_radius=args.max_radius,

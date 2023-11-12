@@ -13,7 +13,12 @@ def t_to_sigma(t_tr, t_rot, t_tor, t_chi, args):
     tr_sigma = args.tr_sigma_min ** (1-t_tr) * args.tr_sigma_max ** t_tr
     rot_sigma = args.rot_sigma_min ** (1-t_rot) * args.rot_sigma_max ** t_rot
     tor_sigma = args.tor_sigma_min ** (1-t_tor) * args.tor_sigma_max ** t_tor
-    chi_sigma = args.chi_sigma_min ** (1-t_chi) * args.chi_sigma_max ** t_chi
+    if getattr(args, 'chi_sigma_min', None) is not None:
+        chi_sigma = args.chi_sigma_min ** (1-t_chi) * args.chi_sigma_max ** t_chi #This noise_schedule is incossistent with the training process
+        # Actually reverse noise schedule just affects the step size of denoising, that's why incossistent noise schedule doesn't affect the results
+        # chi_sigma = t_chi #Start from randomized chi angles but use a relatively small noise schedule, the same with the training process, check its effect on the results
+    else:
+        chi_sigma = None
     return tr_sigma, rot_sigma, tor_sigma, chi_sigma
 
 
