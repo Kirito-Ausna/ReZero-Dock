@@ -21,7 +21,7 @@ for i, name in enumerate(complex_name_list):
         # get dirname of path, then get the last folder name
         complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
 
-new_protein_path_list = []exit
+new_protein_path_list = []
 for protein_path in protein_path_list:
     # new_protein_path_list.append(protein_path.replace('processed', ''))
     file_name = os.path.basename(protein_path)

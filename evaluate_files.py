@@ -74,7 +74,7 @@ for i, name in enumerate(tqdm(names)):
             print('Did not find a directory for ', name, '. We are skipping that complex')
             continue
         # if directory is empty, we skip it
-        elif len(os.listdir(os.path.join(args.results_path, directory_with_name_list[0]))) == 0:
+        elif len(os.listdir(os.path.join(args.results_path, directory_with_name_list[0]))) <= 1: # may contain true_pocket.pkl
             print('Directory ', directory_with_name_list[0], ' is empty. We are skipping that complex')
             continue
         else:
@@ -87,11 +87,26 @@ for i, name in enumerate(tqdm(names)):
         if args.file_to_exclude is not None:
             file_paths = [path for path in file_paths if not args.file_to_exclude in path]
         if not args.no_sidechain:
-            true_pocket = pickle.load(open(os.path.join(result_path, 'true_pockect.pkl'), 'rb'))
+            true_pocket = pickle.load(open(os.path.join(result_path, 'true_pocket.pkl'), 'rb'))
         for i in range(args.num_predictions):
             ligand_pttn = re.compile(rf'rank{i+1}_.*\.sdf$')
             pocket_pttn = re.compile(rf'rank{i+1}_.*\.pkl$')
-            file_path = [path for path in file_paths if ligand_pttn.match(path)][0]
+            # pdb.set_trace()
+            file_path = [path for path in file_paths if ligand_pttn.match(path)]
+            if len(file_path) == 0:
+                print('Did not find a prediction for ', result_path, '. We are skipping that complex')
+                actual_num_predictions = actual_num_predictions - 1
+                print('actual_num_predictions: ', actual_num_predictions)
+                if len(ligand_pos) == 0:
+                    ligand_pos.append(orig_ligand_pos)
+                    if not args.no_sidechain:
+                        pocket_pos.append(true_pocket.node_positions)
+                else:
+                    ligand_pos.append(ligand_pos[-1])
+                    if not args.no_sidechain:
+                        pocket_pos.append(pocket_pos[-1])
+                continue
+            file_path = file_paths[0]
             if not args.no_sidechain:
                 pckt_path = [path for path in file_paths if pocket_pttn.match(path)][0]
             try:
