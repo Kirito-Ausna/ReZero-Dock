@@ -114,8 +114,10 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                         atoms_edge_index = radius_graph(atom_coords, model_args.atom_radius, complex_graph_batch['atom'].batch,
                                                     max_num_neighbors=model_args.atom_max_neighbors if model_args.atom_max_neighbors else 1000)
                         complex_graph_batch['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
+                elif model_args.all_atoms:
+                    tr_score, rot_score, tor_score, _ = model(complex_graph_batch)
                 else:
-                    tr_score, rot_score, tor_score = model(complex_graph_batch)                    
+                    tr_score, rot_score, tor_score = model(complex_graph_batch) # For original DiffDock                    
 
             tr_g = tr_sigma * torch.sqrt(torch.tensor(2 * np.log(model_args.tr_sigma_max / model_args.tr_sigma_min)))
             rot_g = 2 * rot_sigma * torch.sqrt(torch.tensor(np.log(model_args.rot_sigma_max / model_args.rot_sigma_min)))

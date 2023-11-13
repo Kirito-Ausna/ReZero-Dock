@@ -40,7 +40,6 @@ parser.add_argument('--ckpt', type=str, default='best_ema_inference_epoch_model.
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
 
-parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
 parser.add_argument('--batch_size', type=int, default=32, help='')
 parser.add_argument('--no_final_step_noise', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps')
@@ -48,6 +47,10 @@ parser.add_argument('--actual_steps', type=int, default=None, help='Number of de
 
 parser.add_argument('--cache_path', type=str, default='data/example/dataset_cache', help='Path to folder where the cache is stored')
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
+
+parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
+parser.add_argument('--no_chi_noise', action='store_true', default=False, help='Do not add noise to sidechain comformations')
+parser.add_argument('--apo_structure', action='store_true', default=False, help='Use apo structure instead of holo structure')
 args = parser.parse_args()
 
 os.makedirs(args.out_dir, exist_ok=True)
@@ -172,10 +175,10 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
-        randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_angle, 
+        randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise, 
                             score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
         lig = orig_complex_graph.mol[0]
-        if not args.no_chi_angle:
+        if not args.no_chi_angle and not args.apo_structure:
             true_pockect = orig_complex_graph['sidechain']
             # restore the original pocket center
             true_pockect.node_position = true_pockect.node_position + orig_complex_graph.original_center
@@ -227,7 +230,8 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
             write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{confidence[rank]:.2f}.sdf'))
 
         if not args.no_chi_angle:
-            pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pocket.pkl'), 'wb')) # save the true pocket object
+            if not args.apo_structure:
+                pickle.dump(true_pockect, open(os.path.join(write_dir, f'true_pocket.pkl'), 'wb')) # save the true pocket object
             for rank, pos in enumerate(protein_atom_pos):
                 # read protein_path and ligand_description from the complex_name, to prevent the error of index shift when preprocessing in PDBBind class failded in some cases
                 mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pocket_pos=pos)

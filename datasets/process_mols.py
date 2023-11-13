@@ -233,6 +233,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
             valid_c_alpha_coords.append(c_alpha_coords[i])
             if lm_embedding_chains is not None:
                 if i >= len(lm_embedding_chains):
+                    # pdb.set_trace()
                     raise ValueError('Encountered valid chain id that was not present in the LM embeddings')
                 mask = torch.from_numpy(pockect_res_masks[i]).bool()
                 valid_lm_embeddings.append(lm_embedding_chains[i][mask])

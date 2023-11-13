@@ -357,7 +357,7 @@ class PDBBind(Dataset):
             lm_embeddings_chains_all = []
             if not os.path.exists(self.esm_embeddings_path): raise Exception('ESM embeddings path does not exist: ',self.esm_embeddings_path)
             for protein_path in self.protein_path_list:
-                embeddings_paths = sorted(glob.glob(os.path.join(self.esm_embeddings_path, os.path.basename(protein_path).split('.')[0]) + '*'))
+                embeddings_paths = sorted(glob.glob(os.path.join(self.esm_embeddings_path, os.path.basename(protein_path).split('_')[0]) + '*'))
                 # pdb.set_trace()
                 lm_embeddings_chains = []
                 for embeddings_path in embeddings_paths:
@@ -429,7 +429,11 @@ class PDBBind(Dataset):
             return [], []
 
         if ligand is not None:
-            rec_model = parse_pdb_from_path(name)
+            if os.path.exists(name):
+                rec_model = parse_pdb_from_path(name)
+            else:
+                print("path not found", name)
+                return [], []
             name = f'{name}____{ligand_description}'
             ligs = [ligand]
             true_lignds = [true_lignd]

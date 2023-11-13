@@ -66,7 +66,7 @@ def parse_train_args():
     parser.add_argument('--tor_sigma_min', type=float, default=0.0314, help='Minimum sigma for torsional component')
     parser.add_argument('--tor_sigma_max', type=float, default=3.14, help='Maximum sigma for torsional component')
     parser.add_argument('--chi_sigma_min', type=float, default=0.01 * np.pi, help='Minimum sigma for sidechain chi angle component')
-    parser.add_argument('--chi_sigma_max', type=float, default=np.pi, help='Minimum sigma for sidechain chi angle component')
+    parser.add_argument('--chi_sigma_max', type=float, default=np.pi, help='Max sigma for sidechain chi angle component')
     parser.add_argument('--no_torsion', action='store_true', default=False, help='If set only rigid matching')
     parser.add_argument('--no_chi_angle', action='store_true', default=False, help='If set only rigid matching')
     # parser.add_argument('--pi_periodic', action='store_true', default=False, help='If set, sidechain angles are pi periodic')
