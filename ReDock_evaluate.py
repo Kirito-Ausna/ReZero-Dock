@@ -48,9 +48,11 @@ parser.add_argument('--actual_steps', type=int, default=None, help='Number of de
 parser.add_argument('--cache_path', type=str, default='data/example/dataset_cache', help='Path to folder where the cache is stored')
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
 
+# Specicalized Sampling Options
 parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
 parser.add_argument('--no_chi_noise', action='store_true', default=False, help='Do not add noise to sidechain comformations')
 parser.add_argument('--apo_structure', action='store_true', default=False, help='Use apo structure instead of holo structure')
+parser.add_argument('--init_pocket_center', action='store_true', default=False, help='Use the center of the pocket as the initial position of the ligand')
 args = parser.parse_args()
 
 os.makedirs(args.out_dir, exist_ok=True)
@@ -127,7 +129,7 @@ if args.confidence_model_dir is not None and not confidence_args.use_original_mo
 else:
     confidence_test_dataset = None
 
-t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
+t_to_sigma = partial(t_to_sigma_compl, args=score_model_args, linear_tr_schedule=args.init_pocket_center)
 if not args.no_chi_angle:
     so2_1pi_periodic = SO2VESchedule(pi_periodic=True, cache_folder=score_model_args.diffusion_cache_folder, 
                                         sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
@@ -175,9 +177,9 @@ for idx, orig_complex_graph in tqdm(enumerate(test_loader), desc="Generating Doc
         else:
             confidence_data_list = None
         data_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
-        randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise, 
+        randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise, args.init_pocket_center,
                             score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
-        lig = orig_complex_graph.mol[0]
+        lig = orig_complex_graph.mol[0] # just use meta information not the coordinates
         if not args.no_chi_angle and not args.apo_structure:
             true_pockect = orig_complex_graph['sidechain']
             # restore the original pocket center
