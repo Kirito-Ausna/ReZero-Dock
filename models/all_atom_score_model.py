@@ -247,7 +247,7 @@ class TensorProductScoreModel(torch.nn.Module):
             #     train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
             #     data = self.add_chi_noise(data, chi_id=train_chi_id)
         else:
-            tr_sigma, rot_sigma, tor_sigma, _ = [data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']]
+            tr_sigma, rot_sigma, tor_sigma, _ = [data.complex_t[noise_type] for noise_type in ['tr', 'rot', 'tor', 'chi']] # Time and sigma should be both all zero in confidence mode so the t is equal to sigma
         # build ligand graph
         lig_node_attr, lig_edge_index, lig_edge_attr, lig_edge_sh = self.build_lig_conv_graph(data)
         # init_lig_node_attr = lig_node_attr
@@ -385,7 +385,8 @@ class TensorProductScoreModel(torch.nn.Module):
         # pdb.set_trace()
         chi_pred = self.chi_final_layers[chi_id](scalar_chi_attr)
 
-        chi_sigma = data['receptor'].node_t['chi'] # [num_residue]
+        chi_sigma = data['receptor'].node_t['chi'] # [num_residue] #NOTE: This is a bug which works by accident, it' s the timestep acctually not the chi_sigma, but we use the linear noise schedule, so it works.
+        #TODO: I don't know if the orignal noise schedule fail because of this bug, I need to retrain the model to find out.
         # scale by norm
         chi_sigma = chi_sigma.unsqueeze(-1).expand(-1, self.NUM_CHI_ANGLES) # [Num_residues, 4]
         score_norm_1pi = torch.tensor(self.so2_periodic[0].score_norm(chi_sigma), device=chi_sigma.device)

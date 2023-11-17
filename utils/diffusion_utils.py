@@ -11,7 +11,7 @@ from utils.torsion import modify_conformer_torsion_angles
 
 def t_to_sigma(t_tr, t_rot, t_tor, t_chi, args, linear_tr_schedule=False):
     if linear_tr_schedule:
-        tr_sigma = t_tr # for small step size near pocket center
+        tr_sigma = t_tr # for small step size near pocket center, it's buggy
     else:
         tr_sigma = args.tr_sigma_min ** (1-t_tr) * args.tr_sigma_max ** t_tr
     rot_sigma = args.rot_sigma_min ** (1-t_rot) * args.rot_sigma_max ** t_rot
@@ -83,7 +83,8 @@ def get_timestep_embedding(embedding_type, embedding_dim, embedding_scale=10000)
 
 
 def get_t_schedule(inference_steps):
-    return np.linspace(1, 0, inference_steps + 1)[:-1]
+    # return np.linspace(1, 0, inference_steps + 1)[:-1]
+    return np.linspace(0.7, 0, inference_steps + 1)[:-1] # Trunck time for pocket center initialization
 
 
 def set_time(complex_graphs, t_tr, t_rot, t_tor, t_chi, batchsize, all_atoms, device):

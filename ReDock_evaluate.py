@@ -129,7 +129,7 @@ if args.confidence_model_dir is not None and not confidence_args.use_original_mo
 else:
     confidence_test_dataset = None
 
-t_to_sigma = partial(t_to_sigma_compl, args=score_model_args, linear_tr_schedule=args.init_pocket_center)
+t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
 if not args.no_chi_angle:
     so2_1pi_periodic = SO2VESchedule(pi_periodic=True, cache_folder=score_model_args.diffusion_cache_folder, 
                                         sigma_min=score_model_args.chi_sigma_min, sigma_max=score_model_args.chi_sigma_max, 
