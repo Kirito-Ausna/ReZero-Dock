@@ -12,7 +12,7 @@ import copy
 import pdb
 NUM_CHI_ANGLES = 4
 
-def randomize_position(data_list, no_torsion, no_random, no_sidechain, init_pocket_center, tr_sigma_max, 
+def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_max, 
                        atom_radius, atom_max_neighbors=None):
     # in place modification of the list
     if not no_torsion:
@@ -31,13 +31,12 @@ def randomize_position(data_list, no_torsion, no_random, no_sidechain, init_pock
         random_rotation = torch.from_numpy(R.random().as_matrix()).float()
         complex_graph['ligand'].pos = (complex_graph['ligand'].pos - molecule_center) @ random_rotation.T #NOTE: the ligand center now is (0,0,0) the same with pocket Ca center (see pdbbind.py line 480)
         # base_rmsd = np.sqrt(np.sum((complex_graph['ligand'].pos.cpu().numpy() - orig_complex_graph['ligand'].pos.numpy()) ** 2, axis=1).mean())
-        if init_pocket_center:
-            tr_sigma_max = 5 # restrict the initial position of ligand in the pocket
-            # pocket_center = torch.mean(complex_graph['atom'].pos, dim=0, keepdim=True) # this caculation is meaningless as the pocket all atom center is also near zero.
-            # complex_graph['ligand'].pos += pocket_center
-            # pdb.set_trace()
-            # tr_sigma_max = 1 # change to 1 for initializing ligand near pocket center and diversify the initial position
-            #NOTE: Can't be two small, the actual ligand center may not be near the pocket center
+        # tr_sigma_max = 5 # restrict the initial position of ligand in the pocket
+        # pocket_center = torch.mean(complex_graph['atom'].pos, dim=0, keepdim=True) # this caculation is meaningless as the pocket all atom center is also near zero.
+        # complex_graph['ligand'].pos += pocket_center
+        # pdb.set_trace()
+        # tr_sigma_max = 1 # change to 1 for initializing ligand near pocket center and diversify the initial position
+        #NOTE: Can't be two small, the actual ligand center may not be near the pocket center
         if not no_random:  # note for now the torsion angles are still randomised
             tr_update = torch.normal(mean=0, std=tr_sigma_max, size=(1, 3))
             complex_graph['ligand'].pos += tr_update

@@ -385,9 +385,10 @@ class TensorProductScoreModel(torch.nn.Module):
         # pdb.set_trace()
         chi_pred = self.chi_final_layers[chi_id](scalar_chi_attr)
 
-        chi_sigma = data['receptor'].node_t['chi'] # [num_residue] #NOTE: This is a bug which works by accident, it' s the timestep acctually not the chi_sigma, but we use the linear noise schedule, so it works.
+        # chi_sigma = data['receptor'].node_t['chi'] # [num_residue] #NOTE: This is a bug which works by accident, it' s the timestep acctually not the chi_sigma, but we use the linear noise schedule, so it works.
         #TODO: I don't know if the orignal noise schedule fail because of this bug, I need to retrain the model to find out.
         # scale by norm
+        chi_sigma = self.so2_periodic[0].t_to_sigma(data['receptor'].node_t['chi']) # [num_residue]
         chi_sigma = chi_sigma.unsqueeze(-1).expand(-1, self.NUM_CHI_ANGLES) # [Num_residues, 4]
         score_norm_1pi = torch.tensor(self.so2_periodic[0].score_norm(chi_sigma), device=chi_sigma.device)
         score_norm_2pi = torch.tensor(self.so2_periodic[1].score_norm(chi_sigma), device=chi_sigma.device)
