@@ -26,6 +26,8 @@ from datasets.process_mols import safe_index
 from utils.rotamer import residue_list, atom_name_vocab, get_chi_mask, bb_atom_name, residue_list_expand
 from utils import rotamer
 import pdb
+from memory_profiler import profile
+
 class NoiseTransform(BaseTransform):
     def __init__(self, t_to_sigma, 
                  no_torsion, 
@@ -48,7 +50,7 @@ class NoiseTransform(BaseTransform):
         t_tr, t_rot, t_tor, t_chi = t, t, t, t
         # train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
         return self.apply_noise(data, t_tr, t_rot, t_tor, t_chi)
-
+    #@profile
     def apply_noise(self, data, t_tr, t_rot, t_tor, t_chi, tr_update = None, rot_update=None, torsion_updates=None):
         if not torch.is_tensor(data['ligand'].pos):
             data['ligand'].pos = random.choice(data['ligand'].pos)
@@ -207,6 +209,7 @@ class PDBBind(Dataset):
         protein.sidechain37_mask = protein.atom37_mask.clone()  # [num_residue, 37]
         protein.sidechain37_mask[:, bb_atom_name] = False
 
+    #@profile
     def get(self, idx):
         if self.require_ligand:
             complex_graph = copy.deepcopy(self.complex_graphs[idx])

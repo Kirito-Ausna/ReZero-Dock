@@ -197,7 +197,8 @@ class SO2VESchedule(SO2Schedule):
             t (Tensor): Timesteps of shape :math:`(num_res)`
             chi_sigma (Tensor): Chi angle standard deviation of shape :math:`(num_res)`
         """
-        sigmas = self.linear_t_to_sigma(t).unsqueeze(-1) # linear noise schedule works better for sidechain torsion angles denoising
+        # sigmas = self.linear_t_to_sigma(t).unsqueeze(-1) # linear noise schedule works better for sidechain torsion angles denoising
+        sigmas = self.t_to_sigma(t).unsqueeze(-1) # linear noise schedule works better for sidechain torsion angles denoising
         # sigmas = chi_sigma.unsqueeze(-1)
         noise = torch.randn_like(x) * sigmas
         # print(noise.shape, sigmas.shape, x.shape)

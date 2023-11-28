@@ -130,33 +130,33 @@ def train_epoch(model, loader, optimizer, device, t_to_sigma, loss_fn, ema_weigh
         if device.type == 'cuda' and len(data) == 1 or device.type == 'cpu' and data.num_graphs == 1:
             print("Skipping batch of size 1 since otherwise batchnorm would not work.")
         optimizer.zero_grad()
-        try:
-            tr_pred, rot_pred, tor_pred, chi_pred = model(data)
-            loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
-                loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, device=device)
-            loss.backward()
-            # gradient clipping
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            ema_weights.update(model.parameters())
-            meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
-        except RuntimeError as e:
-            if 'out of memory' in str(e):
-                print('| WARNING: ran out of memory, skipping batch')
-                for p in model.parameters():
-                    if p.grad is not None:
-                        del p.grad  # free some memory
-                torch.cuda.empty_cache()
-                continue
-            elif 'Input mismatch' in str(e):
-                print('| WARNING: weird torch_cluster error, skipping batch')
-                for p in model.parameters():
-                    if p.grad is not None:
-                        del p.grad  # free some memory
-                torch.cuda.empty_cache()
-                continue
-            else:
-                raise e
+        # try:
+        tr_pred, rot_pred, tor_pred, chi_pred = model(data)
+        loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
+            loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, device=device)
+        loss.backward()
+        # gradient clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        ema_weights.update(model.parameters())
+        meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
+        # except RuntimeError as e:
+        #     if 'out of memory' in str(e):
+        #         print('| WARNING: ran out of memory, skipping batch')
+        #         for p in model.parameters():
+        #             if p.grad is not None:
+        #                 del p.grad  # free some memory
+        #         torch.cuda.empty_cache()
+        #         continue
+        #     elif 'Input mismatch' in str(e):
+        #         print('| WARNING: weird torch_cluster error, skipping batch')
+        #         for p in model.parameters():
+        #             if p.grad is not None:
+        #                 del p.grad  # free some memory
+        #         torch.cuda.empty_cache()
+        #         continue
+        #     else:
+        #         raise e
 
     return meter.summary()
 
@@ -215,7 +215,7 @@ def test_epoch(model, loader, device, t_to_sigma, loss_fn, test_sigma_intervals=
     # if test_sigma_intervals > 0: out.update(meter_all.summary())
     return out
 
-def get_pocket_metric(pred_pos, true_protein, metric):
+def get_pocket_metric(pred_pos, true_protein, metric, training=False):
     # assert pred_pos.shape == true_pos.shape
     # pred_pos = pred_protein.node_position
     true_pos = true_protein.node_position
@@ -231,14 +231,17 @@ def get_pocket_metric(pred_pos, true_protein, metric):
     sc_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.sidechain37_mask)
     sc_sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue,
                                                 protein.sidechain37_mask)
-    rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.atom37_mask)
-    sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue, protein.atom37_mask)
-    
     sym_replace_mask = sc_rmsd_per_residue > sc_sym_rmsd_per_residue
     sc_rmsd_per_residue[sym_replace_mask] = sc_sym_rmsd_per_residue[sym_replace_mask]
-    rmsd_per_residue[sym_replace_mask] = sym_rmsd_per_residue[sym_replace_mask]
-    metric["sc_atom_rmsd_per_residue"] = sc_rmsd_per_residue
-    metric['atom_rmsd_per_residue'] = rmsd_per_residue
+    if not training:
+        rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, true_pos_per_residue, protein.atom37_mask)
+        sym_rmsd_per_residue = _rmsd_per_residue(pred_pos_per_residue, symm_true_pos_per_residue, protein.atom37_mask)
+        
+        rmsd_per_residue[sym_replace_mask] = sym_rmsd_per_residue[sym_replace_mask]
+        metric["sc_atom_rmsd_per_residue"] = sc_rmsd_per_residue
+        metric['atom_rmsd_per_residue'] = rmsd_per_residue
+    else:
+        metric['atom_rmsd_per_residue'] = sc_rmsd_per_residue
 
     true_pos_per_residue[sym_replace_mask] = symm_true_pos_per_residue[sym_replace_mask]
     true_pos = true_pos_per_residue[protein.atom2residue, protein.atom_name]
@@ -311,7 +314,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
 
         pred_protein = predictions_list[0]['sidechain']
         true_protein = orig_complex_graph['sidechain']
-        chi_ae = get_pocket_metric(pred_protein.node_position, true_protein, {})
+        chi_ae = get_pocket_metric(pred_protein.node_position, true_protein, {}, training=True)
         for k, v in chi_ae.items():
             if k not in chi_metric:
                 chi_metric[k] = []
