@@ -172,3 +172,4 @@ visualizations/*
 workdir/*
 script/*
 datasets/inconsistent_graphs.pkl
+experiments/example/*

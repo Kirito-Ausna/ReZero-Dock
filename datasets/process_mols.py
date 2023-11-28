@@ -149,7 +149,6 @@ def parse_pdb_from_path(path):
         rec = structure[0]
     return rec
 
-
 def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff=8):
     conf = lig.GetConformer()
     lig_coords = conf.GetPositions()
@@ -258,6 +257,10 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
     assert len(c_alpha_coords) == len(c_coords)
     assert sum(valid_lengths) == len(c_alpha_coords)
     return rec, coords, c_alpha_coords, n_coords, c_coords, lm_embeddings
+
+def extract_inference_pocket(rec, lig, lm_embedding_chains=None, pocket_cutoff=8, pocket_center=None, flexible_sidechains=None):
+    
+    pass
 
 
 def get_lig_graph(mol, complex_graph):
