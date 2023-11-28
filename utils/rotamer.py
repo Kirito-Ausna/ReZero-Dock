@@ -491,7 +491,7 @@ def sub_atom_graph(data, atom_mask):
 def remove_by_chi(data, chi_id):
     # clone the protein dict
     #NOTE: clone() is necessary, otherwise the original protein will be modified
-    # we clone the heterograph in get_item() method
+    # we clone the heterograph in dataset.get_item() method
     new_protein = data['sidechain']
     mask_attrs = ['chi_1pi_periodic_mask', 'chi_2pi_periodic_mask', 'chi_mask']
     # pdb.set_trace()

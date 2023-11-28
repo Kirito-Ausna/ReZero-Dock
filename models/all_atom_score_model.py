@@ -12,6 +12,7 @@ from datasets.process_mols import lig_feature_dims, rec_residue_feature_dims, re
 import pdb
 from utils import rotamer
 from torch_cluster import radius_graph
+
 class TensorProductScoreModel(torch.nn.Module):
     def __init__(self, t_to_sigma, so2_periodic, device, timestep_emb_func, in_lig_edge_features=4, sigma_embed_dim=32, sh_lmax=2,
                  ns=16, nv=4, num_conv_layers=2, lig_max_radius=5, rec_max_radius=30, cross_max_distance=250,
@@ -177,6 +178,7 @@ class TensorProductScoreModel(torch.nn.Module):
         )
 
         return chi_mlp
+    #@profile
     def add_chi_noise(self, data, chi_id=None):
         """Add noise to protein and update protein
 
@@ -230,14 +232,14 @@ class TensorProductScoreModel(torch.nn.Module):
         data['atom', 'atom_contact', 'atom'].edge_index = atoms_edge_index
 
         return data
-    
+    #@profile
     def forward(self, data):
         if not self.no_sidechain:
             train_chi_id = np.random.randint(self.NUM_CHI_ANGLES) if self.train_chi_id is None else self.train_chi_id
             data = self.add_chi_noise(data, chi_id=train_chi_id)
         
         return self.predict(data)
-
+    #@profile
     def predict(self, data, sampling=False):
     # def forward(self, data):
         # pdb.set_trace()
@@ -251,16 +253,22 @@ class TensorProductScoreModel(torch.nn.Module):
         # build ligand graph
         lig_node_attr, lig_edge_index, lig_edge_attr, lig_edge_sh = self.build_lig_conv_graph(data)
         # init_lig_node_attr = lig_node_attr
+        if (lig_node_attr > 100).any() or (lig_edge_attr > 100).any() or (lig_edge_sh > 100).any():
+            pdb.set_trace() 
         lig_node_attr = self.lig_node_embedding(lig_node_attr)
         lig_edge_attr = self.lig_edge_embedding(lig_edge_attr)
 
         # build receptor graph
         rec_node_attr, rec_edge_index, rec_edge_attr, rec_edge_sh = self.build_rec_conv_graph(data)
+        if (rec_node_attr > 100).any() or (rec_edge_attr > 100).any() or (rec_edge_sh > 100).any():
+            pdb.set_trace()
         rec_node_attr = self.rec_node_embedding(rec_node_attr)
         rec_edge_attr = self.rec_edge_embedding(rec_edge_attr)
         # build atom graph
         # pdb.set_trace()
         atom_node_attr, atom_edge_index, atom_edge_attr, atom_edge_sh = self.build_atom_conv_graph(data)
+        if (atom_node_attr > 100).any() or (atom_edge_attr > 100).any() or (atom_edge_sh > 100).any():
+            pdb.set_trace()
         atom_node_attr = self.atom_node_embedding(atom_node_attr)
         atom_edge_attr = self.atom_edge_embedding(atom_edge_attr)
 
@@ -268,16 +276,22 @@ class TensorProductScoreModel(torch.nn.Module):
         cross_cutoff = (tr_sigma * 3 + 20).unsqueeze(1) if self.dynamic_max_cross else self.cross_max_distance
         lr_edge_index, lr_edge_attr, lr_edge_sh, la_edge_index, la_edge_attr, \
             la_edge_sh, ar_edge_index, ar_edge_attr, ar_edge_sh = self.build_cross_conv_graph(data, cross_cutoff)
+        if (lr_edge_attr > 10).any() or (lr_edge_sh > 10).any() or (la_edge_attr > 10).any() or (la_edge_sh > 10).any() or (ar_edge_attr > 10).any() or (ar_edge_sh > 10).any():
+            pdb.set_trace()
         lr_edge_attr= self.lr_edge_embedding(lr_edge_attr)
         la_edge_attr = self.la_edge_embedding(la_edge_attr)
         ar_edge_attr = self.ar_edge_embedding(ar_edge_attr)
 
+        if (lig_node_attr > 1000).any() or (lig_edge_attr > 10).any() or \
+            (lig_edge_sh > 10).any() or (rec_node_attr > 1000).any() or \
+            (rec_edge_attr > 10).any() or (rec_edge_sh > 10).any() or \
+            (lr_edge_attr > 10).any() or (lr_edge_sh > 10).any() or \
+            (la_edge_attr > 10).any() or (la_edge_sh > 10).any() or \
+            (ar_edge_attr > 10).any() or (ar_edge_sh > 10).any() or (atom_node_attr > 1000).any() or (atom_edge_attr > 10).any() or (atom_edge_sh > 10).any(): pdb.set_trace()
         for l in range(self.num_conv_layers):
             # LIGAND updates
-            # print("oulaoulaoulaoulaoulaoulaoulaoula6", flush=True)
             lig_edge_attr_ = torch.cat([lig_edge_attr, lig_node_attr[lig_edge_index[0], :self.ns], lig_node_attr[lig_edge_index[1], :self.ns]], -1)
             lig_update = self.conv_layers[9*l](lig_node_attr, lig_edge_index, lig_edge_attr_, lig_edge_sh)
-
             lr_edge_attr_ = torch.cat([lr_edge_attr, lig_node_attr[lr_edge_index[0], :self.ns], rec_node_attr[lr_edge_index[1], :self.ns]], -1)
             lr_update = self.conv_layers[9*l+1](rec_node_attr, lr_edge_index, lr_edge_attr_, lr_edge_sh,
                                                 out_nodes=lig_node_attr.shape[0])
@@ -287,11 +301,9 @@ class TensorProductScoreModel(torch.nn.Module):
                                                 out_nodes=lig_node_attr.shape[0])
 
             if l != self.num_conv_layers-1:  # last layer optimisation
-                # print("oulaoulaoulaoulaoulaoulaoulaoula7", flush=True)
                 # ATOM UPDATES
                 atom_edge_attr_ = torch.cat([atom_edge_attr, atom_node_attr[atom_edge_index[0], :self.ns], atom_node_attr[atom_edge_index[1], :self.ns]], -1)
                 atom_update = self.conv_layers[9*l+3](atom_node_attr, atom_edge_index, atom_edge_attr_, atom_edge_sh)
-                # pdb.set_trace()
                 al_edge_attr_ = torch.cat([la_edge_attr, atom_node_attr[la_edge_index[1], :self.ns], lig_node_attr[la_edge_index[0], :self.ns]], -1)
                 al_update = self.conv_layers[9*l+4](lig_node_attr, torch.flip(la_edge_index, dims=[0]), al_edge_attr_,
                                                     la_edge_sh, out_nodes=atom_node_attr.shape[0])
@@ -321,6 +333,9 @@ class TensorProductScoreModel(torch.nn.Module):
                 # pdb.set_trace()
                 rec_node_attr = F.pad(rec_node_attr, (0, rec_update.shape[-1] - rec_node_attr.shape[-1]))
                 rec_node_attr = rec_node_attr + rec_update + ra_update + rl_update
+            
+            if (lig_node_attr > 1000).any() or (atom_node_attr > 1000).any() or (rec_node_attr > 1000).any():
+                pdb.set_trace()
         # pdb.set_trace()
         # confidence and affinity prediction
         if self.confidence_mode:
@@ -338,8 +353,6 @@ class TensorProductScoreModel(torch.nn.Module):
         tr_pred = global_pred[:, :3] + global_pred[:, 6:9]
         rot_pred = global_pred[:, 3:6] + global_pred[:, 9:]
         data.graph_sigma_emb = self.timestep_emb_func(data.complex_t['tr'])
-        # if tr_pred.mean() > 100:
-        #     pdb.set_trace()
         # adjust the magniture of the score vectors
         tr_norm = torch.linalg.vector_norm(tr_pred, dim=1).unsqueeze(1)
         tr_pred = tr_pred / tr_norm * self.tr_final_layer(torch.cat([tr_norm, data.graph_sigma_emb], dim=1))
@@ -402,7 +415,7 @@ class TensorProductScoreModel(torch.nn.Module):
             data.chi_score = data.chi_score * data['sidechain'].chi_mask.to(data.chi_score.dtype)
             return tr_pred, rot_pred, tor_pred, (chi_pred, score_norm, data.chi_score)
         return tr_pred, rot_pred, tor_pred, chi_pred
-
+    #@profile
     def build_lig_conv_graph(self, data):
         # build the graph between ligand atoms
         data['ligand'].node_sigma_emb = self.timestep_emb_func(data['ligand'].node_t['tr'])
@@ -426,11 +439,12 @@ class TensorProductScoreModel(torch.nn.Module):
         edge_sh = o3.spherical_harmonics(self.sh_irreps, edge_vec, normalize=True, normalization='component')
 
         return node_attr, edge_index, edge_attr, edge_sh
-
+    #@profile
     def build_rec_conv_graph(self, data):
         # build the graph between receptor residues
         data['receptor'].node_sigma_emb = self.timestep_emb_func(data['receptor'].node_t['tr'])
-        node_attr = torch.cat([data['receptor'].x, data['receptor'].node_sigma_emb], 1)
+        node_attr = torch.cat([data['receptor'].x, data['receptor'].node_sigma_emb], 1) #TODO: It is a bug in sequential order
+        # node_attr = torch.cat([data['receptor'].node_sigma_emb, data['receptor].x], 1) #fix the bug
 
         # this assumes the edges were already created in preprocessing since protein's structure is fixed
         edge_index = data['receptor', 'receptor'].edge_index
@@ -443,7 +457,7 @@ class TensorProductScoreModel(torch.nn.Module):
         edge_sh = o3.spherical_harmonics(self.sh_irreps, edge_vec, normalize=True, normalization='component')
 
         return node_attr, edge_index, edge_attr, edge_sh
-
+    #@profile
     def build_atom_conv_graph(self, data):
         # build the graph between receptor atoms
         # pdb.set_trace()
@@ -462,7 +476,7 @@ class TensorProductScoreModel(torch.nn.Module):
         edge_sh = o3.spherical_harmonics(self.sh_irreps, edge_vec, normalize=True, normalization='component')
 
         return node_attr, edge_index, edge_attr, edge_sh
-
+    #@profile
     def build_cross_conv_graph(self, data, lr_cross_distance_cutoff):
         # build the cross edges between ligan atoms, receptor residues and receptor atoms
 
@@ -509,7 +523,7 @@ class TensorProductScoreModel(torch.nn.Module):
 
         return lr_edge_index, lr_edge_attr, lr_edge_sh, la_edge_index, la_edge_attr, \
                la_edge_sh, ar_edge_index, ar_edge_attr, ar_edge_sh
-
+    #@profile
     def build_center_conv_graph(self, data):
         # build the filter for the convolution of the center with the ligand atoms
         # for translational and rotational score
@@ -525,7 +539,7 @@ class TensorProductScoreModel(torch.nn.Module):
         edge_attr = torch.cat([edge_attr, edge_sigma_emb], 1)
         edge_sh = o3.spherical_harmonics(self.sh_irreps, edge_vec, normalize=True, normalization='component')
         return edge_index, edge_attr, edge_sh
-
+    #@profile
     def build_bond_conv_graph(self, data):
         # build graph for the pseudotorque layer
         bonds = data['ligand', 'ligand'].edge_index[:, data['ligand'].edge_mask].long()

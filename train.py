@@ -20,6 +20,8 @@ from utils.training import train_epoch, test_epoch, loss_function, inference_epo
 from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, ExponentialMovingAverage
 from utils.so2 import SO2VESchedule
 
+import torch.autograd.profiler as profiler
+from memory_profiler import profile
 
 def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir, start_epoch=0):
     best_val_loss = math.inf
@@ -33,7 +35,9 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
     for epoch in range(start_epoch, args.n_epochs):
         if epoch % 5 == 0: print("Run name: ", args.run_name)
         logs = {}
+        # with profiler.profile() as prof:
         train_losses = train_epoch(model, train_loader, optimizer, args.device, t_to_sigma, loss_fn, ema_weights)
+        # print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
         print("Epoch {}: Training loss {:.4f}  tr {:.4f}   rot {:.4f}   tor {:.4f}    chi {:.4f}"
               .format(epoch, train_losses['loss'], train_losses['tr_loss'], train_losses['rot_loss'],
                       train_losses['tor_loss'], train_losses['chi_loss']))
@@ -93,9 +97,6 @@ def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_load
             'optimizer': optimizer.state_dict(),
             'ema_weights': ema_weights.state_dict(),
         }, os.path.join(run_dir, 'last_model.pt'))
-
-        if epoch % 50 == 0:
-            torch.cuda.empty_cache() # for clearing memory to prevent slowdowns
 
     print("Best Validation Loss {} on Epoch {}".format(best_val_loss, best_epoch))
     print("Best inference metric {} on Epoch {}".format(best_val_inference_value, best_val_inference_epoch))
