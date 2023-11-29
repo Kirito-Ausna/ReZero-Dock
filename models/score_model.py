@@ -83,6 +83,7 @@ class TensorProductConvLayer(torch.nn.Module):
 
         if self.residual:
             padded = F.pad(node_attr, (0, out.shape[-1] - node_attr.shape[-1]))
+            pdb.set_trace()
             out = out + padded
 
         if self.batch_norm:

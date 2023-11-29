@@ -26,7 +26,6 @@ from datasets.process_mols import safe_index
 from utils.rotamer import residue_list, atom_name_vocab, get_chi_mask, bb_atom_name, residue_list_expand
 from utils import rotamer
 import pdb
-from memory_profiler import profile
 
 class NoiseTransform(BaseTransform):
     def __init__(self, t_to_sigma, 

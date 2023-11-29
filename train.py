@@ -20,9 +20,6 @@ from utils.training import train_epoch, test_epoch, loss_function, inference_epo
 from utils.utils import save_yaml_file, get_optimizer_and_scheduler, get_model, ExponentialMovingAverage
 from utils.so2 import SO2VESchedule
 
-import torch.autograd.profiler as profiler
-from memory_profiler import profile
-
 def train(args, model, optimizer, scheduler, ema_weights, train_loader, val_loader, t_to_sigma, run_dir, start_epoch=0):
     best_val_loss = math.inf
     best_val_inference_value = math.inf if args.inference_earlystop_goal == 'min' else 0

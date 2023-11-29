@@ -89,7 +89,7 @@ class TensorProductScoreModel(torch.nn.Module):
                 'sh_irreps': self.sh_irreps,
                 'out_irreps': out_irreps,
                 'n_edge_features': 3 * ns,
-                'residual': False,
+                'residual': True, # Origanlly False
                 'batch_norm': batch_norm,
                 'dropout': dropout
             }
@@ -282,12 +282,12 @@ class TensorProductScoreModel(torch.nn.Module):
         la_edge_attr = self.la_edge_embedding(la_edge_attr)
         ar_edge_attr = self.ar_edge_embedding(ar_edge_attr)
 
-        if (lig_node_attr > 1000).any() or (lig_edge_attr > 10).any() or \
-            (lig_edge_sh > 10).any() or (rec_node_attr > 1000).any() or \
-            (rec_edge_attr > 10).any() or (rec_edge_sh > 10).any() or \
-            (lr_edge_attr > 10).any() or (lr_edge_sh > 10).any() or \
-            (la_edge_attr > 10).any() or (la_edge_sh > 10).any() or \
-            (ar_edge_attr > 10).any() or (ar_edge_sh > 10).any() or (atom_node_attr > 1000).any() or (atom_edge_attr > 10).any() or (atom_edge_sh > 10).any(): pdb.set_trace()
+        if (lig_node_attr > 200).any() or (lig_edge_attr > 100).any() or \
+            (lig_edge_sh > 10).any() or (rec_node_attr > 200).any() or \
+            (rec_edge_attr > 100).any() or (rec_edge_sh > 10).any() or \
+            (lr_edge_attr > 100).any() or (lr_edge_sh > 10).any() or \
+            (la_edge_attr > 100).any() or (la_edge_sh > 10).any() or \
+            (ar_edge_attr > 100).any() or (ar_edge_sh > 10).any() or (atom_node_attr > 200).any() or (atom_edge_attr > 100).any() or (atom_edge_sh > 10).any(): pdb.set_trace()
         for l in range(self.num_conv_layers):
             # LIGAND updates
             lig_edge_attr_ = torch.cat([lig_edge_attr, lig_node_attr[lig_edge_index[0], :self.ns], lig_node_attr[lig_edge_index[1], :self.ns]], -1)
@@ -356,6 +356,9 @@ class TensorProductScoreModel(torch.nn.Module):
         # adjust the magniture of the score vectors
         tr_norm = torch.linalg.vector_norm(tr_pred, dim=1).unsqueeze(1)
         tr_pred = tr_pred / tr_norm * self.tr_final_layer(torch.cat([tr_norm, data.graph_sigma_emb], dim=1))
+
+        if (tr_norm > 100).any():
+            pdb.set_trace()
 
         rot_norm = torch.linalg.vector_norm(rot_pred, dim=1).unsqueeze(1)
         rot_pred = rot_pred / rot_norm * self.rot_final_layer(torch.cat([rot_norm, data.graph_sigma_emb], dim=1))
