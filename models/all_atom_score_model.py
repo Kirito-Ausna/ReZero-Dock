@@ -253,22 +253,16 @@ class TensorProductScoreModel(torch.nn.Module):
         # build ligand graph
         lig_node_attr, lig_edge_index, lig_edge_attr, lig_edge_sh = self.build_lig_conv_graph(data)
         # init_lig_node_attr = lig_node_attr
-        if (lig_node_attr > 100).any() or (lig_edge_attr > 100).any() or (lig_edge_sh > 100).any():
-            pdb.set_trace() 
         lig_node_attr = self.lig_node_embedding(lig_node_attr)
         lig_edge_attr = self.lig_edge_embedding(lig_edge_attr)
 
         # build receptor graph
         rec_node_attr, rec_edge_index, rec_edge_attr, rec_edge_sh = self.build_rec_conv_graph(data)
-        if (rec_node_attr > 100).any() or (rec_edge_attr > 100).any() or (rec_edge_sh > 100).any():
-            pdb.set_trace()
         rec_node_attr = self.rec_node_embedding(rec_node_attr)
         rec_edge_attr = self.rec_edge_embedding(rec_edge_attr)
         # build atom graph
         # pdb.set_trace()
         atom_node_attr, atom_edge_index, atom_edge_attr, atom_edge_sh = self.build_atom_conv_graph(data)
-        if (atom_node_attr > 100).any() or (atom_edge_attr > 100).any() or (atom_edge_sh > 100).any():
-            pdb.set_trace()
         atom_node_attr = self.atom_node_embedding(atom_node_attr)
         atom_edge_attr = self.atom_edge_embedding(atom_edge_attr)
 
@@ -276,40 +270,33 @@ class TensorProductScoreModel(torch.nn.Module):
         cross_cutoff = (tr_sigma * 3 + 20).unsqueeze(1) if self.dynamic_max_cross else self.cross_max_distance
         lr_edge_index, lr_edge_attr, lr_edge_sh, la_edge_index, la_edge_attr, \
             la_edge_sh, ar_edge_index, ar_edge_attr, ar_edge_sh = self.build_cross_conv_graph(data, cross_cutoff)
-        if (lr_edge_attr > 10).any() or (lr_edge_sh > 10).any() or (la_edge_attr > 10).any() or (la_edge_sh > 10).any() or (ar_edge_attr > 10).any() or (ar_edge_sh > 10).any():
-            pdb.set_trace()
+
         lr_edge_attr= self.lr_edge_embedding(lr_edge_attr)
         la_edge_attr = self.la_edge_embedding(la_edge_attr)
         ar_edge_attr = self.ar_edge_embedding(ar_edge_attr)
 
-        if (lig_node_attr > 200).any() or (lig_edge_attr > 100).any() or \
-            (lig_edge_sh > 10).any() or (rec_node_attr > 200).any() or \
-            (rec_edge_attr > 100).any() or (rec_edge_sh > 10).any() or \
-            (lr_edge_attr > 100).any() or (lr_edge_sh > 10).any() or \
-            (la_edge_attr > 100).any() or (la_edge_sh > 10).any() or \
-            (ar_edge_attr > 100).any() or (ar_edge_sh > 10).any() or (atom_node_attr > 200).any() or (atom_edge_attr > 100).any() or (atom_edge_sh > 10).any(): pdb.set_trace()
         for l in range(self.num_conv_layers):
             # LIGAND updates
             lig_edge_attr_ = torch.cat([lig_edge_attr, lig_node_attr[lig_edge_index[0], :self.ns], lig_node_attr[lig_edge_index[1], :self.ns]], -1)
             lig_update = self.conv_layers[9*l](lig_node_attr, lig_edge_index, lig_edge_attr_, lig_edge_sh)
             lr_edge_attr_ = torch.cat([lr_edge_attr, lig_node_attr[lr_edge_index[0], :self.ns], rec_node_attr[lr_edge_index[1], :self.ns]], -1)
             lr_update = self.conv_layers[9*l+1](rec_node_attr, lr_edge_index, lr_edge_attr_, lr_edge_sh,
-                                                out_nodes=lig_node_attr.shape[0])
+                                                out_nodes=lig_node_attr.shape[0], src_attr=lig_node_attr)
 
             la_edge_attr_ = torch.cat([la_edge_attr, lig_node_attr[la_edge_index[0], :self.ns], atom_node_attr[la_edge_index[1], :self.ns]], -1)
             la_update = self.conv_layers[9*l+2](atom_node_attr, la_edge_index, la_edge_attr_, la_edge_sh,
-                                                out_nodes=lig_node_attr.shape[0])
+                                                out_nodes=lig_node_attr.shape[0], src_attr=lig_node_attr)
 
-            if l != self.num_conv_layers-1:  # last layer optimisation
+            if l != self.num_conv_layers-1 or not self.no_sidechain:  # last layer optimisation
                 # ATOM UPDATES
                 atom_edge_attr_ = torch.cat([atom_edge_attr, atom_node_attr[atom_edge_index[0], :self.ns], atom_node_attr[atom_edge_index[1], :self.ns]], -1)
                 atom_update = self.conv_layers[9*l+3](atom_node_attr, atom_edge_index, atom_edge_attr_, atom_edge_sh)
                 al_edge_attr_ = torch.cat([la_edge_attr, atom_node_attr[la_edge_index[1], :self.ns], lig_node_attr[la_edge_index[0], :self.ns]], -1)
                 al_update = self.conv_layers[9*l+4](lig_node_attr, torch.flip(la_edge_index, dims=[0]), al_edge_attr_,
-                                                    la_edge_sh, out_nodes=atom_node_attr.shape[0])
+                                                    la_edge_sh, out_nodes=atom_node_attr.shape[0], src_attr=atom_node_attr)
 
                 ar_edge_attr_ = torch.cat([ar_edge_attr, atom_node_attr[ar_edge_index[0], :self.ns], rec_node_attr[ar_edge_index[1], :self.ns]],-1)
-                ar_update = self.conv_layers[9*l+5](rec_node_attr, ar_edge_index, ar_edge_attr_, ar_edge_sh, out_nodes=atom_node_attr.shape[0])
+                ar_update = self.conv_layers[9*l+5](rec_node_attr, ar_edge_index, ar_edge_attr_, ar_edge_sh, out_nodes=atom_node_attr.shape[0], src_attr=atom_node_attr)
 
                 # RECEPTOR updates
                 rec_edge_attr_ = torch.cat([rec_edge_attr, rec_node_attr[rec_edge_index[0], :self.ns], rec_node_attr[rec_edge_index[1], :self.ns]], -1)
@@ -317,11 +304,11 @@ class TensorProductScoreModel(torch.nn.Module):
 
                 rl_edge_attr_ = torch.cat([lr_edge_attr, rec_node_attr[lr_edge_index[1], :self.ns], lig_node_attr[lr_edge_index[0], :self.ns]], -1)
                 rl_update = self.conv_layers[9*l+7](lig_node_attr, torch.flip(lr_edge_index, dims=[0]), rl_edge_attr_,
-                                                    lr_edge_sh, out_nodes=rec_node_attr.shape[0])
+                                                    lr_edge_sh, out_nodes=rec_node_attr.shape[0], src_attr=rec_node_attr)
 
                 ra_edge_attr_ = torch.cat([ar_edge_attr, rec_node_attr[ar_edge_index[1], :self.ns], atom_node_attr[ar_edge_index[0], :self.ns]], -1)
                 ra_update = self.conv_layers[9*l+8](atom_node_attr, torch.flip(ar_edge_index, dims=[0]), ra_edge_attr_,
-                                                    ar_edge_sh, out_nodes=rec_node_attr.shape[0])
+                                                    ar_edge_sh, out_nodes=rec_node_attr.shape[0], src_attr=rec_node_attr)
 
             # padding original features and update features with residual updates
             
@@ -334,8 +321,6 @@ class TensorProductScoreModel(torch.nn.Module):
                 rec_node_attr = F.pad(rec_node_attr, (0, rec_update.shape[-1] - rec_node_attr.shape[-1]))
                 rec_node_attr = rec_node_attr + rec_update + ra_update + rl_update
             
-            if (lig_node_attr > 1000).any() or (atom_node_attr > 1000).any() or (rec_node_attr > 1000).any():
-                pdb.set_trace()
         # pdb.set_trace()
         # confidence and affinity prediction
         if self.confidence_mode:
@@ -357,8 +342,8 @@ class TensorProductScoreModel(torch.nn.Module):
         tr_norm = torch.linalg.vector_norm(tr_pred, dim=1).unsqueeze(1)
         tr_pred = tr_pred / tr_norm * self.tr_final_layer(torch.cat([tr_norm, data.graph_sigma_emb], dim=1))
 
-        if (tr_norm > 100).any():
-            pdb.set_trace()
+        # if (tr_norm > 100).any():
+        #     pdb.set_trace()
 
         rot_norm = torch.linalg.vector_norm(rot_pred, dim=1).unsqueeze(1)
         rot_pred = rot_pred / rot_norm * self.rot_final_layer(torch.cat([rot_norm, data.graph_sigma_emb], dim=1))

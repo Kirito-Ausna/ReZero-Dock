@@ -73,17 +73,19 @@ class TensorProductConvLayer(torch.nn.Module):
         )
         self.batch_norm = BatchNorm(out_irreps) if batch_norm else None
 
-    def forward(self, node_attr, edge_index, edge_attr, edge_sh, out_nodes=None, reduce='mean'):
+    def forward(self, dst_attr, edge_index, edge_attr, edge_sh, out_nodes=None, reduce='mean', src_attr=None):
 
         edge_src, edge_dst = edge_index
-        tp = self.tp(node_attr[edge_dst], edge_sh, self.fc(edge_attr))
+        tp = self.tp(dst_attr[edge_dst], edge_sh, self.fc(edge_attr))
 
-        out_nodes = out_nodes or node_attr.shape[0]
+        out_nodes = out_nodes or dst_attr.shape[0]
         out = scatter(tp, edge_src, dim=0, dim_size=out_nodes, reduce=reduce)
 
-        if self.residual:
-            padded = F.pad(node_attr, (0, out.shape[-1] - node_attr.shape[-1]))
-            pdb.set_trace()
+        if self.residual: # node_attr is the destination node, out_nodes is the source node number, the original source node didn't pass in when out_nodes is not None (i.e. source node is not the same as destination node)
+            if src_attr is None:
+                src_attr = dst_attr # if src_attr is None, then src_attr is the same as dst_attr
+            padded = F.pad(src_attr, (0, out.shape[-1] - dst_attr.shape[-1]))
+            # pdb.set_trace()
             out = out + padded
 
         if self.batch_norm:
