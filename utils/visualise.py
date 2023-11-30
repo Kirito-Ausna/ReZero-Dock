@@ -72,28 +72,34 @@ class ModifiedPDB:
         self.mol = mol
         self.rec, self.coords, self.c_alpha_coords, self.n_coords, self.c_coords, _ = extract_receptor_structure(prot, self.mol)
 
-    def to_pdb(self, out_path):
+    def to_pdb(self, out_path, pocket_only=False):
         sc_atom_idx = 0
         updated_atoms = {}
         for atom in self.rec.get_atoms():
             if atom.name not in atom_name_vocab:
                 continue
-        # atom.set_coord(atom_coords[sc_atom_idx])
-            updated_atoms[atom] = self.pocket_pos[sc_atom_idx]
+            if pocket_only:
+                atom.set_coord(self.pocket_pos[sc_atom_idx])
+            else:
+                updated_atoms[atom] = self.pocket_pos[sc_atom_idx]
             sc_atom_idx += 1
         
-        assert len(updated_atoms.keys()) == len(self.pocket_pos), 'Not all sidechain atoms are updated, index may be mismatched.'
+        assert sc_atom_idx == len(self.pocket_pos), 'Not all sidechain atoms are updated, index may be mismatched.'
         # write to pdb file
-        modified_atom_num = 0
-        for atom in self.prot.get_atoms():
-            if atom in updated_atoms:
-                # if (atom.coord - updated_atoms[atom] + 1.257 != 0.0).any():
-                #     print('atom {} is modified from {} to {}'.format(atom.name, atom.coord, updated_atoms[atom]))
-                atom.set_coord(updated_atoms[atom])
-                modified_atom_num += 1
-        assert modified_atom_num == len(updated_atoms.keys()), 'Not all sidechain atoms are modified, index may be mismatched.'
         wirter = PDBIO()
-        wirter.set_structure(self.prot)
+        if pocket_only:
+            wirter.set_structure(self.rec)
+        else:
+            modified_atom_num = 0
+            for atom in self.prot.get_atoms():
+                if atom in updated_atoms:
+                    # if (atom.coord - updated_atoms[atom] + 1.257 != 0.0).any():
+                    #     print('atom {} is modified from {} to {}'.format(atom.name, atom.coord, updated_atoms[atom]))
+                    atom.set_coord(updated_atoms[atom])
+                    modified_atom_num += 1
+            assert modified_atom_num == len(updated_atoms.keys()), 'Not all sidechain atoms are modified, index may be mismatched.'
+            wirter.set_structure(self.prot)
+
         wirter.save(out_path) 
             
     def old_to_pdb(self, out_path):
