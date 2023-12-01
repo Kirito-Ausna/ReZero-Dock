@@ -21,7 +21,7 @@ parser.add_argument('--model_dir', type=str, default="workdir/paper_score_model"
 parser.add_argument('--ckpt_path', type=str, default="best_ema_inference_epoch_model.pt")
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
-parser.add_argument('--cache_path', type=str, default='data/example/dataset_cache', help='Path to folder where the cache is stored')
+parser.add_argument('--cache_path', type=str, default='experiments/cache/crossdock', help='Path to folder where the cache is stored')
 parser.add_argument('--mode', type=str, default='crossdock')
 args = parser.parse_args()
 

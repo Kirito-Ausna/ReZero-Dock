@@ -89,7 +89,7 @@ class TensorProductScoreModel(torch.nn.Module):
                 'sh_irreps': self.sh_irreps,
                 'out_irreps': out_irreps,
                 'n_edge_features': 3 * ns,
-                'residual': True, # Origanlly False
+                'residual': False, # Origanlly False
                 'batch_norm': batch_norm,
                 'dropout': dropout
             }

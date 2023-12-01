@@ -90,7 +90,7 @@ for name in complex_name_list:
 
 # preprocessing of complexes into geometric graphs
 test_dataset = InferenceDatasets(cache_dir=args.cache_path, complex_names=complex_name_list, 
-                                 protein_files=protein_path_list, ligand_description_list=ligand_description_list,
+                                 protein_files=protein_path_list, ligand_descriptions=ligand_description_list,
                                  protein_sequences=protein_sequence_list, mode=args.mode,
                                  receptor_radius=score_model_args.receptor_radius,
                                  remove_hs=score_model_args.remove_hs, out_dir=args.out_dir,

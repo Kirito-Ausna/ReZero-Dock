@@ -151,5 +151,162 @@ def generate_ESM_structure(model, filename, sequence):
     return output is not None
 
 class InferenceDatasets(Dataset):
-    def __init__(self, cache_dir, complex_names, protein_files,):
-        pass
+    def __init__(self, cache_dir, complex_names, protein_files, ligand_descriptions,
+                 protein_sequences, mode, receptor_radius, remove_hs, out_dir, num_workers,
+                 c_apha_max_neighbors=None, all_atoms=True, atom_radius=5, atom_max_neighbors=None):
+        self.cache_dir = cache_dir
+        self.complex_names = complex_names
+        self.protein_files = protein_files
+        self.ligand_descriptions = ligand_descriptions
+        self.protein_sequences = protein_sequences
+        self.mode = mode
+        self.out_dir = out_dir
+
+        self.num_workers = num_workers
+        self.receptor_radius = receptor_radius
+        self.remove_hs = remove_hs
+        self.c_apha_max_neighbors = c_apha_max_neighbors
+        self.all_atoms = all_atoms
+        self.atom_radius = atom_radius
+        self.atom_max_neighbors = atom_max_neighbors
+
+        if self.cache_dir is None or self.mode == 'vitual_screening':
+            self.if_cache = False
+        else: self.if_cache = True
+        if self.if_cache: # we save and read esm embeddings from cache
+            self.esm_cache = os.path.join(cache_dir, 'esm_embeddings.pt')
+            self.lig_graph_cache = os.path.join(cache_dir, 'rdkit_mols_graph.pt')
+            self.rec_graph_cache = os.path.join(cache_dir, 'rec_graph.pt')
+
+        # disentangle the protein and ligand graphs
+        self.lig_graph_dict = None
+        self.rec_graph_dict = None
+        self.mol_dict = None # for saving the meta data of the molecules 
+
+        # read from cache if available
+        if self.if_cache and os.path.exists(self.esm_cache):
+            self.lig_graph_dict = torch.load(self.lig_graph_cache)
+            print('loaded ligand graphs from cache')
+            self.rec_graph_dict = torch.load(self.rec_graph_cache)
+            print('loaded receptor graphs from cache')
+        # generate LM embeddings and cache them, organize them by protein name
+        else:
+            self.preprocess() # generate esm embeddings, ligand graphs, receptor graphs according to the mode
+    def __len__(self):
+        return len(self.complex_names)
+    
+    def __getitem__(self, idx):
+        complex_name = self.complex_names[idx]
+        protein_name = complex_name.split('_')[0]
+        ligand_name = complex_name.split('_')[3]
+
+        # bulid the heterograph
+        complex_graph = HeteroData()
+        complex_graph.name = complex_name
+
+        # check if exists and add ligand graph
+        if ligand_name in self.lig_graph_dict:
+            lig_graph = self.lig_graph_dict[ligand_name]
+            complex_graph['ligand'] = lig_graph
+        else:
+            print('ligand graph not found for', complex_name)
+            complex_graph['suceess'] = False
+            return complex_graph
+
+        # check if exists and add receptor graph
+        if protein_name in self.rec_graph_dict:
+            rec_graph = self.rec_graph_dict[protein_name]
+            complex_graph['receptor'] = rec_graph
+        else:
+            print('receptor graph not found for', complex_name)
+            complex_graph['suceess'] = False
+            return complex_graph
+        protein_center = torch.mean(complex_graph['receptor'].pos, dim=0, keepdim=True)
+        complex_graph['receptor'].pos -= protein_center
+        if self.all_atoms:
+            complex_graph['atom'].pos -= protein_center
+
+        ligand_center = torch.mean(complex_graph['ligand'].pos, dim=0, keepdim=True)
+        complex_graph['ligand'].pos -= ligand_center
+
+        complex_graph.original_center = protein_center
+        complex_graph.mol = self.mol_dict[ligand_name]
+        complex_graph['success'] = True
+        return complex_graph
+    
+    # functions for sidechain torsional diffusion
+    def chi_torsion_features(self, complex_graphs, rec):
+        # get residue type and atom name lists [Num_atom] * 2
+        # atom_feat = comlex_graphs['atom'].x
+        # atom_residue_type = atom_feat[:, 0]
+        # NOTE: The index system is different from the one in process_mols.py
+        atom_residue_type = [] # 20-indexed number as AlphaFold [Num_atom,]
+        atom_name = [] # 37-indexed fixed number [Num_atom,]
+        atom2residue = [] # [Num_atom,] convert the atom_residue_type to residue index array [Num_atoms,] like [0,0,...,0,1,1,..1,...]
+        res_index = 0
+        last_residue = None
+        residue_type = []
+        for i, atom in enumerate(rec.get_atoms()):  # NOTE: atom index must be the same as the one in process_mols.py
+            if atom.name not in atom_name_vocab:
+                continue
+            res = atom.get_parent()
+            res_type_check = safe_index(residue_list_expand, res.get_resname())
+            if res_type_check > 20:
+                res_type = 0
+            else:
+                res_type = safe_index(residue_list, res.get_resname()) # make sure it's normal amino acid
+            res_id = res.get_id() # A residue id is a tuple of (hetero-flag, sequence identifier, insertion code)
+            # pdb.set_trace()
+            atom_name.append(atom_name_vocab[atom.name])
+            atom_residue_type.append(res_type)
+            if last_residue is None:
+                last_residue = res_id
+                residue_type.append(res_type)
+            atom2residue.append(res_index)
+            if res_id != last_residue:
+                res_index += 1
+                last_residue = res_id
+                residue_type.append(res_type)
+        protein = complex_graphs['sidechain']
+        # save the rec_coords for usage in add_noise
+        # protein.rec_coords = rec_coords # the rec_coords here include H atoms
+        atom_residue_type = torch.tensor(atom_residue_type)
+        atom_name = torch.tensor(atom_name)
+        # pdb.set_trace()
+        protein.atom14index = rotamer.restype_atom14_index_map[atom_residue_type, atom_name] # [num_atom,]
+        protein.atom_name = atom_name
+        # complex_graphs['receptor'].residue_type = atom_residue_type
+        residue_indexes = complex_graphs['receptor'].x[:,0]
+        protein.num_residue = residue_indexes.shape[0]
+        protein.num_nodes = complex_graphs['receptor'].num_nodes
+        # complex_graphs['sidechain'].num_nodes = complex_graphs['receptor'].num_nodes
+        protein.atom2residue = torch.tensor(atom2residue)
+        protein.residue_type = torch.tensor(residue_type)
+        atom_position = complex_graphs['atom'].pos #NOTE: [num_atom, 3] and the atom index must be the same as the one in process_mols.py
+        protein.node_position = atom_position
+        # Init residue masks
+        chi_mask = get_chi_mask(protein, device=atom_position.device) # [num_residue, 4]
+        # pdb.set_trace()
+        chi_1pi_periodic_mask = torch.tensor(rotamer.chi_pi_periodic)[protein.residue_type]
+        chi_2pi_periodic_mask = ~chi_1pi_periodic_mask
+        protein.chi_mask = chi_mask
+        protein.chi_1pi_periodic_mask = torch.logical_and(chi_mask, chi_1pi_periodic_mask)  # [num_residue, 4]
+        protein.chi_2pi_periodic_mask = torch.logical_and(chi_mask, chi_2pi_periodic_mask)  # [num_residue, 4]
+        # Init atom37 features
+        protein.atom37_mask = torch.zeros(protein.num_residue, len(atom_name_vocab), device=chi_mask.device,
+                                            dtype=torch.bool)  # [num_residue, 37]
+        protein.atom37_mask[protein.atom2residue, protein.atom_name] = True
+        protein.sidechain37_mask = protein.atom37_mask.clone()  # [num_residue, 37]
+        protein.sidechain37_mask[:, bb_atom_name] = False
+        
+    def preprocess(self):
+        if self.mode == 'vitual_screening':
+            self.preprocess_vitual_screening()
+        elif self.mode == 'sidechain_torsional_diffusion':
+            self.preprocess_sidechain_torsional_diffusion()
+        elif self.mode == 'sidechain_torsional_diffusion_with_noise':
+            self.preprocess_sidechain_torsional_diffusion_with_noise()
+        else:
+            raise NotImplementedError
+
+        
