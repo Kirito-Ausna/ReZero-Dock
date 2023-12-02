@@ -153,7 +153,7 @@ def generate_ESM_structure(model, filename, sequence):
 class InferenceDatasets(Dataset):
     def __init__(self, cache_dir, complex_names, protein_files, ligand_descriptions,
                  protein_sequences, mode, receptor_radius, remove_hs, out_dir, num_workers,
-                 c_apha_max_neighbors=None, all_atoms=True, atom_radius=5, atom_max_neighbors=None):
+                 c_alpha_max_neighbors=None, all_atoms=True, atom_radius=5, atom_max_neighbors=None):
         self.cache_dir = cache_dir
         self.complex_names = complex_names
         self.protein_files = protein_files
@@ -165,7 +165,7 @@ class InferenceDatasets(Dataset):
         self.num_workers = num_workers
         self.receptor_radius = receptor_radius
         self.remove_hs = remove_hs
-        self.c_apha_max_neighbors = c_apha_max_neighbors
+        self.c_alpha_max_neighbors = c_alpha_max_neighbors
         self.all_atoms = all_atoms
         self.atom_radius = atom_radius
         self.atom_max_neighbors = atom_max_neighbors
@@ -174,9 +174,9 @@ class InferenceDatasets(Dataset):
             self.if_cache = False
         else: self.if_cache = True
         if self.if_cache: # we save and read esm embeddings from cache
-            self.esm_cache = os.path.join(cache_dir, 'esm_embeddings.pt')
             self.lig_graph_cache = os.path.join(cache_dir, 'rdkit_mols_graph.pt')
             self.rec_graph_cache = os.path.join(cache_dir, 'rec_graph.pt')
+            self.mol_cache = os.path.join(cache_dir, 'mol_dict.pt')
 
         # disentangle the protein and ligand graphs
         self.lig_graph_dict = None
@@ -184,17 +184,31 @@ class InferenceDatasets(Dataset):
         self.mol_dict = None # for saving the meta data of the molecules 
 
         # read from cache if available
-        if self.if_cache and os.path.exists(self.esm_cache):
+        if self.if_cache and os.path.exists(self.lig_graph_cache):
             self.lig_graph_dict = torch.load(self.lig_graph_cache)
             print('loaded ligand graphs from cache')
             self.rec_graph_dict = torch.load(self.rec_graph_cache)
             print('loaded receptor graphs from cache')
+            self.mol_dict = torch.load(self.mol_cache)
+            print('loaded mol dict from cache')
         # generate LM embeddings and cache them, organize them by protein name
         else:
-            self.preprocess() # generate esm embeddings, ligand graphs, receptor graphs according to the mode
+            self.preprocess() # generate esm embeddings, ligand graphs, receptor graphs mol dict according to the mode
     def __len__(self):
         return len(self.complex_names)
     
+    def copy_graph(self, src_graph, dst_graph):
+        # copy all the node and edge features
+        # copy the edge index
+        for key in src_graph.edge_index_dict.keys():
+            dst_graph[key] = src_graph[key]
+        # copy the node features
+        for key in src_graph.node_attr_dict.keys():
+            dst_graph[key] = src_graph[key]
+        # copy the node position
+        for key in src_graph.node_pos_dict.keys():
+            dst_graph[key] = src_graph[key]
+
     def __getitem__(self, idx):
         complex_name = self.complex_names[idx]
         protein_name = complex_name.split('_')[0]
@@ -203,11 +217,13 @@ class InferenceDatasets(Dataset):
         # bulid the heterograph
         complex_graph = HeteroData()
         complex_graph.name = complex_name
+        complex_graph.prot_path = self.protein_files[idx]
+        complex_graph.lig_path = self.ligand_descriptions[idx]
 
         # check if exists and add ligand graph
         if ligand_name in self.lig_graph_dict:
             lig_graph = self.lig_graph_dict[ligand_name]
-            complex_graph['ligand'] = lig_graph
+            self.copy_graph(lig_graph, complex_graph)
         else:
             print('ligand graph not found for', complex_name)
             complex_graph['suceess'] = False
@@ -216,7 +232,8 @@ class InferenceDatasets(Dataset):
         # check if exists and add receptor graph
         if protein_name in self.rec_graph_dict:
             rec_graph = self.rec_graph_dict[protein_name]
-            complex_graph['receptor'] = rec_graph
+            # complex_graph['receptor'] = rec_graph
+            self.copy_graph(rec_graph, complex_graph)
         else:
             print('receptor graph not found for', complex_name)
             complex_graph['suceess'] = False
@@ -299,7 +316,7 @@ class InferenceDatasets(Dataset):
         protein.sidechain37_mask = protein.atom37_mask.clone()  # [num_residue, 37]
         protein.sidechain37_mask[:, bb_atom_name] = False
         
-    def preprocess(self):
+    def preprocess(self): #NOTE: Only support protein and liand files as input, protein seq and smiles are supported by ReDock_evalaute.py
         distinct_protein_paths = list(set(self.protein_files))
         distinct_ligand_paths = list(set(self.ligand_descriptions))
         protein_names = [os.path.basename(protein_path).split('_')[0] for protein_path in distinct_protein_paths]
@@ -336,6 +353,66 @@ class InferenceDatasets(Dataset):
                 s = protein_sequences[i].split(':')
                 lm_embeddings_chains_all[protein_names[i]] = [lm_embeddings[f'{protein_names[i]}_chain_{j}'] for j in range(len(s))]
 
+        # generate mol dict
+        mol_dict = {}
+        rdkit_mol_path = os.path.join(self.cache_dir, 'rdkit_mols')
+        if os.path.exists(rdkit_mol_path):
+            print('loading rdkit mols from', rdkit_mol_path)
+            for ligand_name in ligand_names:
+                mol_dict[ligand_name] = read_molecule(os.path.join(rdkit_mol_path, ligand_name + '.sdf'), 
+                                                      remove_hs=False, sanitize=True)
+        else:
+            print("Generating rdkit mols")
+            for i, ligand_description in enumerate(distinct_ligand_paths):
+                mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
+                if mol is None:
+                    print('None mol for', ligand_description)
+                    continue
+                mol.RemoveAllConformers()
+                mol = AddHs(mol)
+                generate_conformer(mol)
+                mol_dict[ligand_names[i]] = mol
+            if self.if_cache:
+                torch.save(mol_dict, self.mol_cache)
+
+        # generate ligand graphs
+        lig_graph_dict = {}
+        for lig_name in ligand_names:
+            lig_graph = HeteroData()
+            try:
+                get_lig_graph_with_matching(mol_dict[ligand_name], lig_graph, popsize=None, maxiter=None, matching=False, keep_original=False,
+                                        num_conformers=1, remove_hs=self.remove_hs)
+                lig_graph_dict[lig_name] = lig_graph
+            except Exception as e:
+                print('ligand graph generation failed for', lig_name)
+                print(e)
+                continue
+        if self.if_cache:
+            torch.save(lig_graph_dict, self.lig_graph_cache)
+        # generate receptor graphs
+        rec_graph_dict = {}
+        for i, protein_name in enumerate(protein_names):
+            rec_graph = HeteroData()
+            rec_model = parse_pdb_from_path(distinct_protein_paths[i])
+            # if self.mode != 'virtual_screen': # protein and ligand share the same key
+            try: #NOTE: the pocket information is based on known binding ligand
+                rec, rec_coords, c_alpha_coords, n_coords, c_coords, lm_embeddings = extract_receptor_structure(rec_model, mol_dict[protein_name], 
+                                                                                                                lm_embedding_chains=lm_embeddings_chains_all[protein_name])
+                if lm_embeddings is not None and len(c_alpha_coords) != len(lm_embeddings):
+                    print('protein and esm embeddings have different lengths')
+                    continue
+                get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords, rec_graph, rec_radius=self.receptor_radius,
+                        c_alpha_max_neighbors=self.c_alpha_max_neighbors, all_atoms=self.all_atoms,
+                        atom_radius=self.atom_radius, atom_max_neighbors=self.atom_max_neighbors, remove_hs=self.remove_hs, lm_embeddings=lm_embeddings)
+                rec_graph_dict[protein_name] = rec_graph
+                self.chi_torsion_features(rec_graph, rec) # sidechain graph as part of the receptor graph
+            except Exception as e:
+                print('receptor graph generation failed for', protein_name)
+                print(e)
+                continue
+        if self.if_cache:
+            torch.save(rec_graph_dict, self.rec_graph_cache)
+            
 
 
                 

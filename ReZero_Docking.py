@@ -191,7 +191,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
 
         # save predictions
         protein_path = orig_complex_graph["prot_path"]
-        ligand_description = orig_complex_graph["lig_name"]
+        ligand_description = orig_complex_graph["lig_path"]
         complex_name = orig_complex_graph["name"]
         # pdb.set_trace()
         lig = orig_complex_graph.mol
