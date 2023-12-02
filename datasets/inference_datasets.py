@@ -5,7 +5,7 @@ from esm import FastaBatchedDataset, pretrained
 from rdkit.Chem import AddHs, MolFromSmiles
 from torch_geometric.data import Dataset, HeteroData
 import esm
-
+import glob
 from datasets.process_mols import parse_pdb_from_path, generate_conformer, read_molecule, get_lig_graph_with_matching, \
     extract_receptor_structure, get_rec_graph
 from datasets.process_mols import safe_index
@@ -85,7 +85,7 @@ def get_sequences(protein_files, protein_sequences):
         if protein_files[i] is not None:
             new_sequences.append(get_sequences_from_pdbfile(protein_files[i]))
         else:
-            new_sequences.append(protein_sequences[i])
+            new_sequences.append(protein_sequences[i]) #TODO: don't support crossdock mode
     return new_sequences
 
 
@@ -300,13 +300,44 @@ class InferenceDatasets(Dataset):
         protein.sidechain37_mask[:, bb_atom_name] = False
         
     def preprocess(self):
-        if self.mode == 'vitual_screening':
-            self.preprocess_vitual_screening()
-        elif self.mode == 'sidechain_torsional_diffusion':
-            self.preprocess_sidechain_torsional_diffusion()
-        elif self.mode == 'sidechain_torsional_diffusion_with_noise':
-            self.preprocess_sidechain_torsional_diffusion_with_noise()
+        distinct_protein_paths = list(set(self.protein_files))
+        distinct_ligand_paths = list(set(self.ligand_descriptions))
+        protein_names = [os.path.basename(protein_path).split('_')[0] for protein_path in distinct_protein_paths]
+        ligand_names = [os.path.basename(ligand_path).split('_')[0] for ligand_path in distinct_ligand_paths] 
+        # generate esm embeddings
+        lm_embeddings_chains_all = {}
+        esm_embedding_path = os.path.join(self.cache_dir, 'esm_embeddings') # check if the embeddings are already computed
+        if os.path.exists(esm_embedding_path):
+            print('loading esm embeddings from', esm_embedding_path)
+            for protein_name in protein_names:
+                embeddings_paths = sorted(glob.glob(os.path.join(esm_embedding_path, protein_name) + '*'))
+                lm_embeddings_chains = []
+                for embeddings_path in embeddings_paths:
+                    lm_embeddings_chains.append(torch.load(embeddings_path)['representations'][33])
+                lm_embeddings_chains_all[protein_name] = torch.cat(lm_embeddings_chains)
         else:
-            raise NotImplementedError
+            print("Generating ESM language model embeddings")
+            model_location = "esm2_t33_650M_UR50D"
+            model, alphabet = pretrained.load_model_and_alphabet(model_location)
+            model.eval()
+            if torch.cuda.is_available():
+                model = model.cuda()
+
+            protein_sequences = get_sequences(distinct_protein_paths, self.protein_sequences)
+            labels, sequences = [], []
+            for i in range(len(protein_sequences)):
+                s = protein_sequences[i].split(':')
+                sequences.extend(s)
+                labels.extend([protein_names[i] + '_chain_' + str(j) for j in range(len(s))])
+
+            lm_embeddings = compute_ESM_embeddings(model, alphabet, labels, sequences)
+
+            for i in range(len(protein_sequences)):
+                s = protein_sequences[i].split(':')
+                lm_embeddings_chains_all[protein_names[i]] = [lm_embeddings[f'{protein_names[i]}_chain_{j}'] for j in range(len(s))]
+
+
+
+                
 
         
