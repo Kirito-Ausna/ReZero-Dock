@@ -372,8 +372,8 @@ class InferenceDatasets(Dataset):
                 mol = AddHs(mol)
                 generate_conformer(mol)
                 mol_dict[ligand_names[i]] = mol
-            if self.if_cache:
-                torch.save(mol_dict, self.mol_cache)
+        if self.if_cache:
+            torch.save(mol_dict, self.mol_cache)
 
         # generate ligand graphs
         lig_graph_dict = {}
