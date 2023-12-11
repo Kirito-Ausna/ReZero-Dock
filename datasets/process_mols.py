@@ -168,6 +168,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
         count = 0
         invalid_res_ids = []
         pck_res_mask = []
+        # pdb.set_trace()
         for res_idx, residue in enumerate(chain):
             if residue.get_resname() == 'HOH':
                 invalid_res_ids.append(residue.get_id())
@@ -182,6 +183,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
                 if atom.name == 'C':
                     c = list(atom.get_vector())
                 residue_coords.append(list(atom.get_vector()))
+            # pdb.set_trace()
             residue_coords = np.array(residue_coords)
             dist = spatial.distance.cdist(lig_coords, residue_coords).min()
             if c_alpha != None and n != None and c != None and dist <= pocket_cutoff:
@@ -216,6 +218,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
         pockect_res_masks.append(np.array(pck_res_mask))
         if not count == 0: valid_chain_ids.append(chain.get_id())
 
+    # pdb.set_trace()
     min_distances = np.array(min_distances)
     if len(valid_chain_ids) == 0: # As in current data, this is not possible, but just in case
         valid_chain_ids.append(np.argmin(min_distances))
@@ -244,7 +247,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
             valid_lengths.append(lengths[i])
         else:
             invalid_chain_ids.append(chain.get_id())
-            
+    # pdb.set_trace()
     coords = [item for sublist in valid_coords for item in sublist]  # list with n_residues arrays whose shape in [n_atoms, 3]
     c_alpha_coords = np.concatenate(valid_c_alpha_coords, axis=0)  # [n_residues, 3]
     n_coords = np.concatenate(valid_n_coords, axis=0)  # [n_residues, 3]

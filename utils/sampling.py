@@ -12,6 +12,7 @@ import copy
 import pdb
 NUM_CHI_ANGLES = 4
 
+#NOTE: Has been modified to handle batch in ReZero_Docking.py
 def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_max, 
                        atom_radius, atom_max_neighbors=None):
     # in place modification of the list
@@ -19,11 +20,15 @@ def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_
         # randomize torsion angles
         for complex_graph in data_list:
             torsion_updates = np.random.uniform(low=-np.pi, high=np.pi, size=complex_graph['ligand'].edge_mask.sum())
+            if isinstance(complex_graph['ligand'].mask_rotate, list):
+                mask_rotate = complex_graph['ligand'].mask_rotate[0]
+            else:
+                mask_rotate = complex_graph['ligand'].mask_rotate
             complex_graph['ligand'].pos = \
                 modify_conformer_torsion_angles(complex_graph['ligand'].pos,
-                                                complex_graph['ligand', 'ligand'].edge_index.T[
-                                                    complex_graph['ligand'].edge_mask],
-                                                complex_graph['ligand'].mask_rotate[0], torsion_updates)
+                                                complex_graph['ligand','lig_bond','ligand'].edge_index.T[
+                                                complex_graph['ligand'].edge_mask],
+                                                mask_rotate, torsion_updates)
 
     for complex_graph in data_list:
         # randomize position
@@ -42,7 +47,8 @@ def randomize_position(data_list, no_torsion, no_random, no_sidechain, tr_sigma_
             complex_graph['ligand'].pos += tr_update
         if not no_sidechain:
             protein = complex_graph['sidechain']
-            torsion_updates = torch.rand((protein.num_residue, 4), device=protein.num_residue.device) * 2 * np.pi
+            # pdb.set_trace()
+            torsion_updates = torch.rand((protein.num_residue, 4), device=protein.node_position.device) * 2 * np.pi
             rotate_side_chain(protein, torsion_updates)
             # Modify the complex graph according to protein dict
             complex_graph['atom'].pos = protein.node_position

@@ -4,6 +4,7 @@ import torch, copy
 from scipy.spatial.transform import Rotation as R
 from torch_geometric.utils import to_networkx
 from torch_geometric.data import Data
+import pdb
 
 """
     Preprocessing and computation for torsional updates to conformers

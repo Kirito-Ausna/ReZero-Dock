@@ -30,7 +30,7 @@ parser.add_argument('--complex_name', type=str, default='1a0q', help='Name that 
 parser.add_argument('--protein_path', type=str, default=None, help='Path to the protein file')
 parser.add_argument('--protein_sequence', type=str, default=None, help='Sequence of the protein for ESMFold, this is ignored if --protein_path is not None')
 parser.add_argument('--ligand_description', type=str, default='CCCCC(NC(=O)CCC(=O)O)P(=O)(O)OC1=CC=CC=C1', help='Either a SMILES string or the path to a molecule file that rdkit can read')
-parser.add_argument('--cache_path', type=str, default='experiments/crossdock_cache', help='Path to folder where the cache are stored')
+parser.add_argument('--cache_path', type=str, default=None, help='Path to folder where the cache are stored')
 
 parser.add_argument('--out_dir', type=str, default='results/user_inference', help='Directory where the outputs will be written to')
 
@@ -47,7 +47,7 @@ parser.add_argument('--inference_steps', type=int, default=20, help='Number of d
 parser.add_argument('--actual_steps', type=int, default=None, help='Number of denoising steps that are actually performed')
 
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
-parser.add_argument('--device, type=str, default="cuda:0"', help='Device to run inference on')
+parser.add_argument('--device', type=str, default="cuda:0", help='Device to run inference on')
 
 # Specicalized Sampling Options
 parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
@@ -157,10 +157,10 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
         orig_list.append(orig_complex_graph) # save the original complex graph
         conf_list = [copy.deepcopy(orig_complex_graph) for _ in range(N)]
         data_list.extend(conf_list)
-    randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise, args.init_pocket_center,
+    randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise,
                         score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
     # run reverse diffusion
-    data_list, confidence = sampling(data_list=data_list, model=model, complex_name_list = complex_name_list,
+    data_list, confidence = sampling(data_list=data_list, model=model,
                                         inference_steps=args.actual_steps if args.actual_steps is not None else args.inference_steps,
                                         tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule, chi_schedule=tr_schedule,
                                         device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
