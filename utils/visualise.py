@@ -66,15 +66,16 @@ class ModifiedPDB:
         self.pocket_pos = pocket_pos
         prot = parse_pdb_from_path(pdb_path)
         self.prot = copy.deepcopy(prot)
-        mol = MolFromSmiles(ligand_description)
+        mol = MolFromSmiles(ligand_description)#NOTE: In crossdock setting, we need ligands binding to the holo structure
         if mol is None:
-            mol = read_molecule(ligand_description)
+            mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
         self.mol = mol
         self.rec, self.coords, self.c_alpha_coords, self.n_coords, self.c_coords, _ = extract_receptor_structure(prot, self.mol)
 
     def to_pdb(self, out_path, pocket_only=False):
         sc_atom_idx = 0
         updated_atoms = {}
+        
         for atom in self.rec.get_atoms():
             if atom.name not in atom_name_vocab:
                 continue

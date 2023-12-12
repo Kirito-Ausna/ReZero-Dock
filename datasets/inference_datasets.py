@@ -287,7 +287,8 @@ class InferenceDatasets(Dataset):
         complex_graph['ligand'].pos -= ligand_center
 
         complex_graph.original_center = protein_center
-        complex_graph.mol = self.mol_dict[ligand_name]
+        complex_graph.mol = self.mol_dict[ligand_name] #NOTE: We need ground truth mol for identifying the pocket
+        # complex_graph.mol = read_molecule(self.ligand_descriptions[idx], remove_hs=False, sanitize=True)
         complex_graph['success'] = True
         return complex_graph
     
@@ -417,7 +418,7 @@ class InferenceDatasets(Dataset):
         if self.if_cache:
             torch.save(mol_dict, self.mol_cache)
             print('saved mol dict to', self.mol_cache)
-
+        self.mol_dict = mol_dict
         # generate ligand graphs
         lig_graph_dict = {}
         print('Generating ligand graphs')
@@ -434,12 +435,17 @@ class InferenceDatasets(Dataset):
         if self.if_cache:
             torch.save(lig_graph_dict, self.lig_graph_cache)
             print('saved ligand graphs to', self.lig_graph_cache)
+        self.lig_graph_dict = lig_graph_dict
         # generate receptor graphs
         rec_graph_dict = {}
         print('Generating receptor graphs')
         for i, protein_name in enumerate(protein_names):
             rec_graph = HeteroData()
             rec_model = parse_pdb_from_path(distinct_protein_paths[i])
+            # find the corresponding ligand in holo structure according to the protein name
+            for ligand_description in distinct_ligand_paths:
+                if protein_name in ligand_description:
+                    break
             true_mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
             # if self.mode != 'virtual_screen': # protein and ligand share the same key
             # try: #NOTE: the pocket information is based on known binding ligand
@@ -461,7 +467,7 @@ class InferenceDatasets(Dataset):
         if self.if_cache:
             torch.save(rec_graph_dict, self.rec_graph_cache)
             print('saved receptor graphs to', self.rec_graph_cache)
-            
+        self.rec_graph_dict = rec_graph_dict
 
 
                 
