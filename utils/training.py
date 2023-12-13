@@ -130,33 +130,33 @@ def train_epoch(model, loader, optimizer, device, t_to_sigma, loss_fn, ema_weigh
         if device.type == 'cuda' and len(data) == 1 or device.type == 'cpu' and data.num_graphs == 1:
             print("Skipping batch of size 1 since otherwise batchnorm would not work.")
         optimizer.zero_grad()
-        # try:
-        tr_pred, rot_pred, tor_pred, chi_pred = model(data)
-        loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
-            loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, device=device)
-        loss.backward()
-        # gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        ema_weights.update(model.parameters())
-        meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
-        # except RuntimeError as e:
-        #     if 'out of memory' in str(e):
-        #         print('| WARNING: ran out of memory, skipping batch')
-        #         for p in model.parameters():
-        #             if p.grad is not None:
-        #                 del p.grad  # free some memory
-        #         torch.cuda.empty_cache()
-        #         continue
-        #     elif 'Input mismatch' in str(e):
-        #         print('| WARNING: weird torch_cluster error, skipping batch')
-        #         for p in model.parameters():
-        #             if p.grad is not None:
-        #                 del p.grad  # free some memory
-        #         torch.cuda.empty_cache()
-        #         continue
-        #     else:
-        #         raise e
+        try:
+            tr_pred, rot_pred, tor_pred, chi_pred = model(data)
+            loss, tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss = \
+                loss_fn(tr_pred, rot_pred, tor_pred, chi_pred, data=data, t_to_sigma=t_to_sigma, device=device)
+            loss.backward()
+            # gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            ema_weights.update(model.parameters())
+            meter.add([loss.cpu().detach(), tr_loss, rot_loss, tor_loss, chi_loss, tr_base_loss, rot_base_loss, tor_base_loss, chi_base_loss])
+        except RuntimeError as e:
+            if 'out of memory' in str(e):
+                print('| WARNING: ran out of memory, skipping batch')
+                for p in model.parameters():
+                    if p.grad is not None:
+                        del p.grad  # free some memory
+                torch.cuda.empty_cache()
+                continue
+            elif 'Input mismatch' in str(e):
+                print('| WARNING: weird torch_cluster error, skipping batch')
+                for p in model.parameters():
+                    if p.grad is not None:
+                        del p.grad  # free some memory
+                torch.cuda.empty_cache()
+                continue
+            else:
+                raise e
 
     return meter.summary()
 
@@ -266,7 +266,7 @@ def inference_epoch(model, complex_graphs, device, t_to_sigma, args):
     t_schedule = get_t_schedule(inference_steps=args.inference_steps)
     tr_schedule, rot_schedule, tor_schedule, chi_schedule = t_schedule, t_schedule, t_schedule, t_schedule
 
-    dataset = ListDataset(complex_graphs)
+    dataset = ListDataset(complex_graphs) #NOTE: batching complex will result in torsion update accomendation which is a little difficult to handle
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=False) # Just one by one here, keep in mind in reading next codes, hard to change
     rmsds = []
     chi_metric = {}

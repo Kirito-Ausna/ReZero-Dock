@@ -31,7 +31,6 @@ def modify_conformer(data, tr_update, rot_update, torsion_updates):
     rigid_new_pos = (data['ligand'].pos - lig_center) @ rot_mat.T + tr_update + lig_center
 
     if torsion_updates is not None:
-        pdb.set_trace()
         flexible_new_pos = modify_conformer_torsion_angles(rigid_new_pos,
                                                            data['ligand', 'ligand'].edge_index.T[data['ligand'].edge_mask],
                                                            data['ligand'].mask_rotate if isinstance(data['ligand'].mask_rotate, np.ndarray) else data['ligand'].mask_rotate[0],
