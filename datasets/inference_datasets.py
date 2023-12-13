@@ -12,6 +12,7 @@ from datasets.process_mols import safe_index
 from utils.rotamer import residue_list, atom_name_vocab, get_chi_mask, bb_atom_name, residue_list_expand
 from utils import rotamer
 import pdb
+import copy
 
 sidechian_features = ['chi_mask', 'chi_1pi_periodic_mask', 'chi_2pi_periodic_mask', 'atom37_mask', 'sidechain37_mask', 'atom14index', 'atom_name', 'atom2residue', 'residue_type', 'node_position', 'num_residue', 'num_nodes']
 
@@ -256,8 +257,8 @@ class InferenceDatasets(Dataset):
 
         # check if exists and add ligand graph
         if ligand_name in self.lig_graph_dict and protein_name in self.rec_graph_dict:
-            lig_graph = self.lig_graph_dict[ligand_name]
-            rec_graph = self.rec_graph_dict[protein_name]
+            lig_graph = copy.deepcopy(self.lig_graph_dict[ligand_name])
+            rec_graph = copy.deepcopy(self.rec_graph_dict[protein_name])
             self.construct_complex_graph(lig_graph, rec_graph, complex_graph)
             # complex_graph = self.copy_graph(lig_graph, complex_graph)
             # complex_graph.update(lig_graph)

@@ -177,7 +177,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
             ligand_pos_list = [complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
             ligand_pos = np.asarray(ligand_pos_list)
             if not args.no_chi_angle and args.mode != 'virtual_screening':
-                protein_atom_pos_list = [complex_graph['atom'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
+                protein_atom_pos_list = [complex_graph['atom'].pos.cpu().numpy() + complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
                 protein_atom_pos = np.asarray(protein_atom_pos_list)
             # reorder predictions based on confidence output
             if cur_confidence is not None and isinstance(confidence_args.rmsd_classification_cutoff, list):
