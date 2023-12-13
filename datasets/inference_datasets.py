@@ -246,7 +246,7 @@ class InferenceDatasets(Dataset):
     def get(self, idx):
         complex_name = self.complex_names[idx]
         protein_name = complex_name.split('_')[0]
-        ligand_name = complex_name.split('_')[3]
+        ligand_name = complex_name.split('_')[2]
 
         # bulid the heterograph
         complex_graph = HeteroData()
@@ -255,7 +255,6 @@ class InferenceDatasets(Dataset):
         complex_graph.lig_path = self.ligand_descriptions[idx]
 
         # check if exists and add ligand graph
-        # pdb.set_trace()
         if ligand_name in self.lig_graph_dict and protein_name in self.rec_graph_dict:
             lig_graph = self.lig_graph_dict[ligand_name]
             rec_graph = self.rec_graph_dict[protein_name]
@@ -440,6 +439,7 @@ class InferenceDatasets(Dataset):
         rec_graph_dict = {}
         print('Generating receptor graphs')
         for i, protein_name in enumerate(protein_names):
+            # pdb.set_trace()
             rec_graph = HeteroData()
             rec_model = parse_pdb_from_path(distinct_protein_paths[i])
             # find the corresponding ligand in holo structure according to the protein name
@@ -448,22 +448,24 @@ class InferenceDatasets(Dataset):
                     break
             true_mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
             # if self.mode != 'virtual_screen': # protein and ligand share the same key
-            # try: #NOTE: the pocket information is based on known binding ligand
+            try: #NOTE: the pocket information is based on known binding ligand
                 # pdb.set_trace()
-            rec, rec_coords, c_alpha_coords, n_coords, c_coords, lm_embeddings = extract_receptor_structure(rec_model, true_mol, 
-                                                                                                            lm_embedding_chains=lm_embeddings_chains_all[protein_name])
-            if lm_embeddings is not None and len(c_alpha_coords) != len(lm_embeddings):
-                print('protein and esm embeddings have different lengths')
+                rec, rec_coords, c_alpha_coords, n_coords, c_coords, lm_embeddings = extract_receptor_structure(rec_model, true_mol, 
+                                                                                                                lm_embedding_chains=lm_embeddings_chains_all[protein_name])
+                if lm_embeddings is not None and len(c_alpha_coords) != len(lm_embeddings):
+                    print('protein and esm embeddings have different lengths')
+                    continue
+                get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords, rec_graph, rec_radius=self.receptor_radius,
+                        c_alpha_max_neighbors=self.c_alpha_max_neighbors, all_atoms=self.all_atoms,
+                        atom_radius=self.atom_radius, atom_max_neighbors=self.atom_max_neighbors, remove_hs=self.remove_hs, lm_embeddings=lm_embeddings)
+                self.chi_torsion_features(rec_graph, rec) # sidechain graph as part of the receptor graph
+                rec_graph_dict[protein_name] = rec_graph
+            # pdb.set_trace()
+            except Exception as e:
+                print('receptor graph generation failed for', protein_name)
+                print(e)
                 continue
-            get_rec_graph(rec, rec_coords, c_alpha_coords, n_coords, c_coords, rec_graph, rec_radius=self.receptor_radius,
-                    c_alpha_max_neighbors=self.c_alpha_max_neighbors, all_atoms=self.all_atoms,
-                    atom_radius=self.atom_radius, atom_max_neighbors=self.atom_max_neighbors, remove_hs=self.remove_hs, lm_embeddings=lm_embeddings)
-            rec_graph_dict[protein_name] = rec_graph
-            self.chi_torsion_features(rec_graph, rec) # sidechain graph as part of the receptor graph
-            # except Exception as e:
-            #     print('receptor graph generation failed for', protein_name)
-            #     print(e)
-            #     continue
+            
         if self.if_cache:
             torch.save(rec_graph_dict, self.rec_graph_cache)
             print('saved receptor graphs to', self.rec_graph_cache)

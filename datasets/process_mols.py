@@ -168,7 +168,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
         count = 0
         invalid_res_ids = []
         pck_res_mask = []
-        # pdb.set_trace()
+        dists = []
         for res_idx, residue in enumerate(chain):
             if residue.get_resname() == 'HOH':
                 invalid_res_ids.append(residue.get_id())
@@ -183,9 +183,9 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
                 if atom.name == 'C':
                     c = list(atom.get_vector())
                 residue_coords.append(list(atom.get_vector()))
-            # pdb.set_trace()
             residue_coords = np.array(residue_coords)
             dist = spatial.distance.cdist(lig_coords, residue_coords).min()
+            dists.append(dist)
             if c_alpha != None and n != None and c != None and dist <= pocket_cutoff:
             # if c_alpha != None and n != None and c != None:
                 # only append residue if it is an amino acid and not some weird molecule that is part of the complex
@@ -201,7 +201,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
                 invalid_res_ids.append(residue.get_id())
         for res_id in invalid_res_ids:
             chain.detach_child(res_id)
-        
+        # pdb.set_trace()
         if len(chain_coords) > 0:
             all_chain_coords = np.concatenate(chain_coords, axis=0)
             distances = spatial.distance.cdist(lig_coords, all_chain_coords)
@@ -221,7 +221,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
     # pdb.set_trace()
     min_distances = np.array(min_distances)
     if len(valid_chain_ids) == 0: # As in current data, this is not possible, but just in case
-        valid_chain_ids.append(np.argmin(min_distances))
+        valid_chain_ids.append(np.argmin(min_distances))#TODO: this is not correct, but just for now
     valid_coords = []
     valid_c_alpha_coords = []
     valid_n_coords = []

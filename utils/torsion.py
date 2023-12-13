@@ -48,6 +48,7 @@ def modify_conformer_torsion_angles(pos, edge_index, mask_rotate, torsion_update
     pos = copy.deepcopy(pos)
     if type(pos) != np.ndarray: pos = pos.cpu().numpy()
 
+    # pdb.set_trace()
     for idx_edge, e in enumerate(edge_index.cpu().numpy()):
         if torsion_updates[idx_edge] == 0:
             continue

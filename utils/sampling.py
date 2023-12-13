@@ -153,7 +153,7 @@ def sampling(data_list, model, inference_steps, tr_schedule, rot_schedule, tor_s
                     tor_z = torch.zeros(tor_score.shape) if no_random or (no_final_step_noise and t_idx == inference_steps - 1) \
                         else torch.normal(mean=0, std=1, size=tor_score.shape)
                     tor_perturb = (tor_g ** 2 * dt_tor * tor_score.cpu() + tor_g * np.sqrt(dt_tor) * tor_z).numpy()
-                torsions_per_molecule = tor_perturb.shape[0] // b
+                torsions_per_molecule = tor_perturb.shape[0] // b #NOTE: It assumes that the torsion angles are the same for each molecule in the batch
             else:
                 tor_perturb = None
 
