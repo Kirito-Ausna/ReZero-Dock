@@ -2,7 +2,7 @@
 # Just the top script that call ReZero_Docking script automatically
 # set visible devices
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,4,5,6"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 from argparse import ArgumentParser
 from tqdm import tqdm
 import subprocess
@@ -11,6 +11,7 @@ import pdb
 
 parser = ArgumentParser()
 parser.add_argument('--csv_folder', type=str, default="data/crossdock_representative_csv")
+parser.add_argument('--large_csv_file', type=str, default=None)
 parser.add_argument('--output_folder', type=str, default="results/crossdock")
 parser.add_argument('--restart_id', type=int, default=-1)
 
@@ -58,7 +59,30 @@ def run_docking(args, csv, device):
     # process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
 
     return process
-   
+
+if args.large_csv_file is not None: # for large csv file, split it into small csv files
+# split the large csv file into small csv files
+    target_name = os.path.basename(args.large_csv_file).split(".")[0]
+    complex_num_per_file = 10000
+    csv_folder = os.path.join(args.csv_folder, target_name)
+    if not os.path.exists(csv_folder):
+        os.makedirs(csv_folder)
+    with open(args.large_csv_file, "r") as f:
+        lines = f.readlines()
+    num_lines = len(lines)
+    num_files = num_lines // complex_num_per_file + 1
+    for i in range(num_files):
+        with open(os.path.join(csv_folder, f"{target_name}_split_{i}.csv"), "w") as f:
+            # if not the first line, write the header
+            if i != 0:
+                f.write(lines[0])
+            if i == args.num_agents - 1:
+                f.writelines(lines[i * complex_num_per_file:])
+            else:
+                f.writelines(lines[i * complex_num_per_file: (i + 1) * complex_num_per_file])
+
+    args.csv_folder = csv_folder
+
 csv_id = 0
 csvs = os.listdir(args.csv_folder)[args.restart_id + 1:]
 
@@ -67,6 +91,8 @@ pbar = tqdm(total=len(csvs))
 processes = []
 csv_in_processes = []
 for i in range(args.num_agents):
+    if csv_id >= len(csvs):
+        break
     device = f"cuda:{i}"
     csv_path = os.path.join(args.csv_folder, csvs[csv_id])
     processes.append(run_docking(args, csv_path, device))

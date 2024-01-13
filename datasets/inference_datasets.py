@@ -178,7 +178,7 @@ class InferenceDatasets(Dataset):
             self.if_cache = False
         else: self.if_cache = True
         if self.if_cache: # we save and read esm embeddings from cache
-            self.target_name = os.path.dirname(self.protein_files[0]).split('/')[-1]
+            self.target_name = os.path.basename(self.out_dir)
             target_cache_dir = os.path.join(cache_dir, self.target_name)
             if not os.path.exists(target_cache_dir):
                 os.makedirs(target_cache_dir)
