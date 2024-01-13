@@ -54,6 +54,8 @@ parser.add_argument('--no_chi_angle', action='store_true', default=False, help='
 parser.add_argument('--no_chi_noise', action='store_true', default=False, help='Do not add noise to sidechain comformations')
 parser.add_argument('--mode', type=str, default='crossdock', help='Inferece mode, crossdock, redocking, apodock. virtual_screening')
 args = parser.parse_args()
+# print(args)
+# pdb.set_trace()
 
 os.makedirs(args.out_dir, exist_ok=True)
 with open(f'{args.model_dir}/model_parameters.yml') as f:
@@ -88,7 +90,7 @@ holo_ligand_path = {}
 for name in complex_name_list:
     write_dir = f'{args.out_dir}/{name}'
     os.makedirs(write_dir, exist_ok=True)
-
+# pdb.set_trace()
 # preprocessing of complexes into geometric graphs
 test_dataset = InferenceDatasets(cache_dir=args.cache_path, complex_names=complex_name_list, 
                                  protein_files=protein_path_list, ligand_descriptions=ligand_description_list,
@@ -229,7 +231,8 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
     # pdb.set_trace()
     except Exception as e:
         print("Failed on", e)
-        failures += 1
+        if 'non-empty' not in str(e): # ignore the error of empty complex(skipped)
+            failures += args.complex_per_batch
 
 print(f'Failed for {failures} complexes')
 print(f'Skipped {skipped} complexes')
