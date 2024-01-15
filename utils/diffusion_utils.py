@@ -29,12 +29,13 @@ def t_to_sigma(t_tr, t_rot, t_tor, t_chi, args):
 def modify_conformer(data, tr_update, rot_update, torsion_updates):
     lig_center = torch.mean(data['ligand'].pos, dim=0, keepdim=True)
     rot_mat = axis_angle_to_matrix(rot_update.squeeze())
-    if torch.abs(tr_update) < 100 and (torch.abs(rot_update) < 10000).any(): # ensure the update is normal
+    if (torch.abs(tr_update) < 100).any(): # ensure the update is normal
         rigid_new_pos = (data['ligand'].pos - lig_center) @ rot_mat.T + tr_update + lig_center
     else:
-        print('tr_update or rot_update is abnormal, use the original conformer instead.Will try again in next SDE discrete step.')
+        # print('tr_update or rot_update is abnormal, use the original conformer instead.Will try again in next SDE discrete step.')
         rigid_new_pos = data['ligand'].pos # keep the original conformer and only conduct torsion updates
-
+        data.success = torch.tensor([False])
+    
     if torsion_updates is not None:
         try:
             flexible_new_pos = modify_conformer_torsion_angles(rigid_new_pos,
