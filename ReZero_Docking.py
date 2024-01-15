@@ -176,7 +176,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
         # split the ligand_pos into individual complexes
         cur_data_list = data_list[index*N:(index+1)*N]
         cur_confidence = confidence[index*N:(index+1)*N] if confidence is not None else None
-        success_status = [complex_graph.success for complex_graph in cur_data_list]
+        success_status = [complex_graph.success.cpu().numpy() for complex_graph in cur_data_list]
         if not any(success_status):
             failures += 1 # all conformers failed, then this complex failed
         ligand_pos_list = [complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
