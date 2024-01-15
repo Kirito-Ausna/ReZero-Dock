@@ -57,7 +57,6 @@ def modify_conformer_torsion_angles(pos, edge_index, mask_rotate, torsion_update
         # check if need to reverse the edge, v should be connected to the part that gets rotated
         assert not mask_rotate[idx_edge, u]
         assert mask_rotate[idx_edge, v]
-
         rot_vec = pos[u] - pos[v]  # convention: positive rotation if pointing inwards
         rot_vec = rot_vec * torsion_updates[idx_edge] / np.linalg.norm(rot_vec) # idx_edge!
         rot_mat = R.from_rotvec(rot_vec).as_matrix()

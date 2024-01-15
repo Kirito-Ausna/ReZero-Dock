@@ -76,7 +76,7 @@ if args.large_csv_file is not None: # for large csv file, split it into small cs
             # if not the first line, write the header
             if i != 0:
                 f.write(lines[0])
-            if i == args.num_agents - 1:
+            if i == num_files - 1:
                 f.writelines(lines[i * complex_num_per_file:])
             else:
                 f.writelines(lines[i * complex_num_per_file: (i + 1) * complex_num_per_file])

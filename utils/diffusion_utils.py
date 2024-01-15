@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from scipy.stats import beta
+import pdb
 
 from utils.geometry import axis_angle_to_matrix, rigid_transform_Kabsch_3D_torch
 from utils.torsion import modify_conformer_torsion_angles
@@ -28,16 +29,29 @@ def t_to_sigma(t_tr, t_rot, t_tor, t_chi, args):
 def modify_conformer(data, tr_update, rot_update, torsion_updates):
     lig_center = torch.mean(data['ligand'].pos, dim=0, keepdim=True)
     rot_mat = axis_angle_to_matrix(rot_update.squeeze())
-    rigid_new_pos = (data['ligand'].pos - lig_center) @ rot_mat.T + tr_update + lig_center
+    if torch.abs(tr_update) < 100 and (torch.abs(rot_update) < 10000).any(): # ensure the update is normal
+        rigid_new_pos = (data['ligand'].pos - lig_center) @ rot_mat.T + tr_update + lig_center
+    else:
+        print('tr_update or rot_update is abnormal, use the original conformer instead.Will try again in next SDE discrete step.')
+        rigid_new_pos = data['ligand'].pos # keep the original conformer and only conduct torsion updates
 
     if torsion_updates is not None:
-        flexible_new_pos = modify_conformer_torsion_angles(rigid_new_pos,
-                                                           data['ligand', 'ligand'].edge_index.T[data['ligand'].edge_mask],
-                                                           data['ligand'].mask_rotate if isinstance(data['ligand'].mask_rotate, np.ndarray) else data['ligand'].mask_rotate[0],
-                                                           torsion_updates).to(rigid_new_pos.device)
-        R, t = rigid_transform_Kabsch_3D_torch(flexible_new_pos.T, rigid_new_pos.T)
-        aligned_flexible_pos = flexible_new_pos @ R.T + t.T
-        data['ligand'].pos = aligned_flexible_pos
+        try:
+            flexible_new_pos = modify_conformer_torsion_angles(rigid_new_pos,
+                                                            data['ligand', 'ligand'].edge_index.T[data['ligand'].edge_mask],
+                                                            data['ligand'].mask_rotate if isinstance(data['ligand'].mask_rotate, np.ndarray) else data['ligand'].mask_rotate[0],
+                                                            torsion_updates).to(rigid_new_pos.device)
+            R, t = rigid_transform_Kabsch_3D_torch(flexible_new_pos.T, rigid_new_pos.T)
+            aligned_flexible_pos = flexible_new_pos @ R.T + t.T
+            data['ligand'].pos = aligned_flexible_pos
+        except Exception as e:
+            # The error is caused by the tr_update and rot_update, the irregular large number in the update, which comes from the inconsistent network output
+            # data['ligand'].pos = rigid_new_pos
+            print('modify_conformer_torsion_angles failed, use the original conformer instead.Will try again in next SDE discrete step:', e)
+            # determine whether to accept the conformer in the save procudure
+            # set the value of data.success to tensor([False])
+            data.success = torch.tensor([False])
+            # pdb.set_trace()
     else:
         data['ligand'].pos = rigid_new_pos
     return data
