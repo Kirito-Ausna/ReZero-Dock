@@ -2,7 +2,6 @@
 # Just the top script that call ReZero_Docking script automatically
 # set visible devices
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 from argparse import ArgumentParser
 from tqdm import tqdm
 import subprocess

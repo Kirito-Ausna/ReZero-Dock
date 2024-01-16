@@ -172,6 +172,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                                             confidence_model_args=confidence_args, batch_size=args.batch_size, 
                                             no_final_step_noise=args.no_final_step_noise, no_chi_angle=args.no_chi_angle)
         
+<<<<<<< HEAD
         for index, orig_complex_graph in enumerate(orig_list):
             # split the ligand_pos into individual complexes
             cur_data_list = data_list[index*N:(index+1)*N]
@@ -215,6 +216,71 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                 write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{cur_confidence[rank]:.2f}'+postfix+'.sdf'))
 
             if not args.no_chi_angle and args.mode != 'virtual_screening':
+=======
+    randomize_position(data_list, score_model_args.no_torsion, False, args.no_chi_noise,
+                        score_model_args.tr_sigma_max, score_model_args.atom_radius, score_model_args.atom_max_neighbors)
+    # run reverse diffusion
+    data_list, confidence = sampling(data_list=data_list, model=model,
+                                        inference_steps=args.actual_steps if args.actual_steps is not None else args.inference_steps,
+                                        tr_schedule=tr_schedule, rot_schedule=tr_schedule, tor_schedule=tr_schedule, chi_schedule=tr_schedule,
+                                        device=device, t_to_sigma=t_to_sigma, model_args=score_model_args,
+                                        confidence_model=confidence_model, confidence_data_list=confidence_data_list, 
+                                        confidence_model_args=confidence_args, batch_size=args.batch_size, 
+                                        no_final_step_noise=args.no_final_step_noise, no_chi_angle=args.no_chi_angle)
+    
+    for index, orig_complex_graph in enumerate(orig_list):
+        # split the ligand_pos into individual complexes
+        cur_data_list = data_list[index*N:(index+1)*N]
+        cur_confidence = confidence[index*N:(index+1)*N] if confidence is not None else None
+        success_status = [complex_graph.success.cpu().numpy() for complex_graph in cur_data_list]
+        if not any(success_status):
+            failures += 1 # all conformers failed, then this complex failed
+        ligand_pos_list = [complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
+        ligand_pos = np.asarray(ligand_pos_list)
+        if not args.no_chi_angle and args.mode != 'virtual_screening':
+            protein_atom_pos_list = [complex_graph['atom'].pos.cpu().numpy() + complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
+            protein_atom_pos = np.asarray(protein_atom_pos_list)
+        # reorder predictions based on confidence output
+        if cur_confidence is not None and isinstance(confidence_args.rmsd_classification_cutoff, list):
+            cur_confidence = cur_confidence[:, 0]
+        if cur_confidence is not None:
+            cur_confidence = cur_confidence.cpu().numpy()
+            re_order = np.argsort(cur_confidence)[::-1]
+            cur_confidence = cur_confidence[re_order]
+            success_status = np.asarray(success_status)[re_order]
+            ligand_pos = ligand_pos[re_order]
+            if not args.no_chi_angle:
+                protein_atom_pos = protein_atom_pos[re_order]
+
+        # save predictions
+        protein_path = orig_complex_graph["prot_path"]
+        ligand_description = orig_complex_graph["lig_path"]
+        complex_name = orig_complex_graph["name"]
+        # pdb.set_trace()
+        lig = orig_complex_graph.mol
+        pocket = orig_complex_graph['sidechain']
+        # restore the original pocket center
+        pocket.node_position = pocket.node_position + orig_complex_graph.original_center
+        write_dir = f'{args.out_dir}/{complex_name}'
+        for rank, pos in enumerate(ligand_pos):
+            mol_pred = copy.deepcopy(lig)
+            if score_model_args.remove_hs: mol_pred = RemoveHs(mol_pred)
+            # add postfix to the complex name according to the success status
+            postfix = '' if success_status[rank] else '_rescued'
+            if rank == 0: write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}'+postfix+'.sdf'))
+            write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{cur_confidence[rank]:.2f}'+postfix+'.sdf'))
+
+        if not args.no_chi_angle and args.mode != 'virtual_screening':
+            if args.mode == 'apo_docking':
+                pickle.dump(pocket, open(os.path.join(write_dir, f'pocket.pkl'), 'wb')) # save the true pocket object
+            for rank, pos in enumerate(protein_atom_pos):
+                # read protein_path and ligand_description from the complex_name, to prevent the error of index shift when preprocessing in PDBBind class failded in some cases
+                # for crossdock, we need to use the holo structure-binding ligand
+                if args.mode != 'redocking':
+                # find the corresponding ligand in holo structure according to the protein name
+                    ligand_description = os.path.join(os.path.dirname(protein_path), complex_name.split('_')[0]+'_LIG.sdf')
+                mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pocket_pos=pos)
+>>>>>>> d0ea90aab3ff06ac147076facc2b666b811f0f73
                 if args.mode == 'apo_docking':
                     pickle.dump(pocket, open(os.path.join(write_dir, f'pocket.pkl'), 'wb')) # save the true pocket object
                 for rank, pos in enumerate(protein_atom_pos):
