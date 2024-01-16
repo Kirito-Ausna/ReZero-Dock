@@ -340,6 +340,7 @@ class InferenceDatasets(Dataset):
         # complex_graphs['sidechain'].num_nodes = complex_graphs['receptor'].num_nodes
         protein.atom2residue = torch.tensor(atom2residue)
         protein.residue_type = torch.tensor(residue_type)
+        assert protein.num_residue == protein.residue_type.shape[0] # prevent the bug of different residue number when meeting trash data
         atom_position = complex_graphs['atom'].pos #NOTE: [num_atom, 3] and the atom index must be the same as the one in process_mols.py
         protein.node_position = atom_position
         # Init residue masks
