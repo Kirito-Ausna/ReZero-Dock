@@ -219,7 +219,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                 cur_confidence = cur_confidence[re_order]
                 success_status = np.asarray(success_status)[re_order]
                 ligand_pos = ligand_pos[re_order]
-                if not args.no_chi_angle:
+                if not args.no_chi_angle and args.mode != 'virtual_screen': # we don't need to reorder the protein for virtual_screen
                     protein_atom_pos = protein_atom_pos[re_order]
 
             # save predictions

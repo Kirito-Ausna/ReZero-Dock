@@ -445,8 +445,12 @@ class InferenceDatasets(Dataset):
             print('loading rdkit mols from', rdkit_mol_path)
             for ligand_name in ligand_names:
                 try:
-                    mol_dict[ligand_name] = read_molecule(os.path.join(rdkit_mol_path, ligand_name + '.sdf'), 
-                                                      remove_hs=False, sanitize=True)
+                    path = os.path.join(rdkit_mol_path, ligand_name + '.sdf')
+                    if not os.path.exists(path):
+                        print('rdkit mol not found for', ligand_name)
+                        mol_dict[ligand_name] = None
+                        continue
+                    mol_dict[ligand_name] = read_molecule(path, remove_hs=False, sanitize=True)
                 except Exception as e:
                     print('error loading rdkit mol for', ligand_name)
                     print(e)
