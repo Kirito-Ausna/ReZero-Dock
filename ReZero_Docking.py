@@ -1,4 +1,6 @@
-# Highly improved generation script for large scale realistic scenerios
+"""Improved generation script for large scale realistic scenerios
+currently supports crossdocking, redocking, apodock, and virtual_screen
+"""
 import copy
 import os
 import torch
@@ -25,34 +27,43 @@ import pdb
 RDLogger.DisableLog('rdApp.*')
 import yaml
 parser = ArgumentParser()
+# Inference mode
+parser.add_argument('--mode', type=str, default='virtual_screen', help='Inferece mode, [crossdock, redocking, apodock. virtual_screen]')
+parser.add_argument('--cache_path', type=str, default=None, help='Path to folder where the cache are stored')
+# For interface for various settings except virtual_screen
 parser.add_argument('--protein_ligand_csv', type=str, default=None, help='Path to a .csv file specifying the input as described in the README. If this is not None, it will be used instead of the --protein_path, --protein_sequence and --ligand parameters')
-parser.add_argument('--complex_name', type=str, default='1a0q', help='Name that the complex will be saved with')
+# demo or one sample only
 parser.add_argument('--protein_path', type=str, default=None, help='Path to the protein file')
 parser.add_argument('--protein_sequence', type=str, default=None, help='Sequence of the protein for ESMFold, this is ignored if --protein_path is not None')
 parser.add_argument('--ligand_description', type=str, default='CCCCC(NC(=O)CCC(=O)O)P(=O)(O)OC1=CC=CC=C1', help='Either a SMILES string or the path to a molecule file that rdkit can read')
-parser.add_argument('--cache_path', type=str, default=None, help='Path to folder where the cache are stored')
-
+parser.add_argument('--complex_name', type=str, default='1a0q', help='Name that the complex will be saved with')
+# For virtual_screen
+parser.add_argument('--protein_target_path', type=str, default=None, help='Path to the target protein file')
+parser.add_argument('--ligand_in_pocket_path', type=str, default=None, help='Path to the ligand in that defines the pocket')
+parser.add_argument('--ligand_database_path', type=str, default=None, help='Path to the ligand database file (usually sdf) for screening')
+parser.add_argument('--start_ligand_id', type=int, default=1, help='The ligand id in the database to start virtual screening from, 1 is the first, not 0')
+parser.add_argument('--end_ligand_id', type=int, default=-1, help='The ligand id in the database to end virtual screening at')
+# save the results
 parser.add_argument('--out_dir', type=str, default='results/user_inference', help='Directory where the outputs will be written to')
-
+# model configurations
 parser.add_argument('--model_dir', type=str, default='workdir/paper_score_model', help='Path to folder with trained score model and hyperparameters')
 parser.add_argument('--ckpt', type=str, default='best_ema_inference_epoch_model.pt', help='Checkpoint to use for the score model')
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
-
+# sampling configurations
 parser.add_argument('--samples_per_complex', type=int, default=5, help='Number of samples to generate')
-parser.add_argument('--complex_per_batch', type=int, default=12, help='Number of complexes to generate in parallel')
-parser.add_argument('--batch_size', type=int, default=32, help='')
+parser.add_argument('--complex_per_batch', type=int, default=12, help='Number of complexes to generate in parallel') #NOTE: sample_num in one shot = sample_per_complex * complex_per_batch
+parser.add_argument('--batch_size', type=int, default=32, help='Number of samples to run in parallel')
 parser.add_argument('--no_final_step_noise', action='store_true', default=False, help='Use no noise in the final step of the reverse diffusion')
 parser.add_argument('--inference_steps', type=int, default=20, help='Number of denoising steps')
 parser.add_argument('--actual_steps', type=int, default=None, help='Number of denoising steps that are actually performed')
-
+# device configurations
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
 parser.add_argument('--device', type=str, default="cuda:0", help='Device to run inference on')
 
 # Specicalized Sampling Options
 parser.add_argument('--no_chi_angle', action='store_true', default=False, help='Do not sample sidechain chi angles')
 parser.add_argument('--no_chi_noise', action='store_true', default=False, help='Do not add noise to sidechain comformations')
-parser.add_argument('--mode', type=str, default='crossdock', help='Inferece mode, crossdock, redocking, apodock. virtual_screening')
 args = parser.parse_args()
 # print(args)
 # pdb.set_trace()
@@ -66,40 +77,55 @@ if args.confidence_model_dir is not None:
 
 device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
 
-if args.protein_ligand_csv is not None:
+# Load the input data, initialize the variable
+complex_name_list, protein_path_list, protein_sequence_list, ligand_description_list = None, None, None, None
+protein_target_path, ligand_in_pocket_path, ligand_database_path = None, None, None
+
+if args.protein_ligand_csv is not None: # crossdocking or redocking
     df = pd.read_csv(args.protein_ligand_csv)
     complex_name_list = set_nones(df['complex_name'].tolist())
     protein_path_list = set_nones(df['protein_path'].tolist())
     protein_sequence_list = set_nones(df['protein_sequence'].tolist())
     ligand_description_list = set_nones(df['ligand_description'].tolist())
-else:
+elif args.ligand_database_path is not None: # virtual_screen, it uses a different interface for user's ease
+    protein_target_path = args.protein_target_path #TODO: remember to unify the dataset and dataloaer for different modes, so they can share the same interface codes
+    ligand_in_pocket_path = args.ligand_in_pocket_path
+    ligand_database_path = args.ligand_database_path
+    start_ligand_id = args.start_ligand_id
+    end_ligand_id = args.end_ligand_id
+else: # demo or one sample only
     complex_name_list = [args.complex_name]
     protein_path_list = [args.protein_path]
     protein_sequence_list = [args.protein_sequence]
     ligand_description_list = [args.ligand_description]
 
 # complex_name_list = [name if name is not None else f"complex_{i}" for i, name in enumerate(complex_name_list)]
-for i, name in enumerate(complex_name_list):
-    if name is None:
-        complex_name_list[i] = f'complex_{i}'
-    elif isinstance(name, int): # rename number to pdbid
-        # get dirname of path, then get the last folder name
-        complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
-# pdb.set_trace()
-holo_ligand_path = {}
-for name in complex_name_list:
-    write_dir = f'{args.out_dir}/{name}'
-    os.makedirs(write_dir, exist_ok=True)
+if args.mode != 'virtual_screen':
+    for i, name in enumerate(complex_name_list):
+        if name is None:
+            complex_name_list[i] = f'complex_{i}'
+        elif isinstance(name, int): # rename number to pdbid
+            # get dirname of path, then get the last folder name
+            complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
+    # pdb.set_trace()
+    # holo_ligand_path = {}
+    for name in complex_name_list:
+        write_dir = f'{args.out_dir}/{name}'
+        os.makedirs(write_dir, exist_ok=True)
+        
 # pdb.set_trace()
 # preprocessing of complexes into geometric graphs
-test_dataset = InferenceDatasets(cache_dir=args.cache_path, complex_names=complex_name_list, 
-                                 protein_files=protein_path_list, ligand_descriptions=ligand_description_list,
-                                 protein_sequences=protein_sequence_list, mode=args.mode,
+test_dataset = InferenceDatasets(mode=args.mode, cache_dir=args.cache_path, complex_names=complex_name_list,
+                                 protein_files=protein_path_list, ligand_descriptions=ligand_description_list, 
+                                 protein_sequences=protein_sequence_list, start_ligand_id=start_ligand_id,
+                                 protein_target_path=protein_target_path, ligand_in_pocket_path=ligand_in_pocket_path,
+                                 ligand_database_path=ligand_database_path, end_ligand_id=args.end_ligand_id,
                                  receptor_radius=score_model_args.receptor_radius,
                                  remove_hs=score_model_args.remove_hs, out_dir=args.out_dir,
                                  c_alpha_max_neighbors=score_model_args.c_alpha_max_neighbors,
                                  all_atoms=score_model_args.all_atoms, atom_radius=score_model_args.atom_radius,
                                  atom_max_neighbors=score_model_args.atom_max_neighbors, num_workers=args.num_workers)
+
 test_loader = DataListLoader(test_dataset, batch_size=args.complex_per_batch, shuffle=False)
 
 t_to_sigma = partial(t_to_sigma_compl, args=score_model_args)
@@ -181,7 +207,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                 failures += 1 # all conformers failed, then this complex failed
             ligand_pos_list = [complex_graph['ligand'].pos.cpu().numpy() + orig_complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
             ligand_pos = np.asarray(ligand_pos_list)
-            if not args.no_chi_angle and args.mode != 'virtual_screening':
+            if not args.no_chi_angle and args.mode != 'virtual_screen':
                 protein_atom_pos_list = [complex_graph['atom'].pos.cpu().numpy() + complex_graph.original_center.cpu().numpy() for complex_graph in cur_data_list]
                 protein_atom_pos = np.asarray(protein_atom_pos_list)
             # reorder predictions based on confidence output
@@ -197,8 +223,9 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                     protein_atom_pos = protein_atom_pos[re_order]
 
             # save predictions
-            protein_path = orig_complex_graph["prot_path"]
-            ligand_description = orig_complex_graph["lig_path"]
+            if args.mode != 'virtual_screen': # we don't need to save the protein and pocket for virtual_screen
+                protein_path = orig_complex_graph["prot_path"]
+                ligand_description = orig_complex_graph["lig_path"]
             complex_name = orig_complex_graph["name"]
             # pdb.set_trace()
             lig = orig_complex_graph.mol
@@ -206,6 +233,8 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
             # restore the original pocket center
             pocket.node_position = pocket.node_position + orig_complex_graph.original_center
             write_dir = f'{args.out_dir}/{complex_name}'
+            if not os.path.exists(write_dir):
+                os.makedirs(write_dir) # for virtual_screening, we don't know the complex name before preprocessing
             for rank, pos in enumerate(ligand_pos):
                 mol_pred = copy.deepcopy(lig)
                 if score_model_args.remove_hs: mol_pred = RemoveHs(mol_pred)
@@ -214,7 +243,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                 if rank == 0: write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}'+postfix+'.sdf'))
                 write_mol_with_coords(mol_pred, pos, os.path.join(write_dir, f'rank{rank+1}_confidence{cur_confidence[rank]:.2f}'+postfix+'.sdf'))
 
-            if not args.no_chi_angle and args.mode != 'virtual_screening':
+            if not args.no_chi_angle and args.mode != 'virtual_screen':
                 if args.mode == 'apo_docking':
                     pickle.dump(pocket, open(os.path.join(write_dir, f'pocket.pkl'), 'wb')) # save the true pocket object
                 for rank, pos in enumerate(protein_atom_pos):
@@ -222,7 +251,7 @@ for idx, orig_complex_graphs in tqdm(enumerate(test_loader), desc="Generating Do
                     # for crossdock, we need to use the holo structure-binding ligand
                     if args.mode != 'redocking':
                     # find the corresponding ligand in holo structure according to the protein name
-                        ligand_description = os.path.join(os.path.dirname(protein_path), complex_name.split('_')[0]+'_LIG.sdf')
+                        ligand_description = os.path.join(os.path.dirname(protein_path), complex_name.split('_')[0]+'_LIG.sdf') # complex_name[0] is the protein name
                     mod_prot = ModifiedPDB(pdb_path=protein_path, ligand_description=ligand_description, pocket_pos=pos)
                     if args.mode == 'apo_docking':
                         if rank == 0:

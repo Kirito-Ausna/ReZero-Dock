@@ -517,6 +517,19 @@ def write_mol_with_coords(mol, new_coords, path):
     w.write(mol)
     w.close()
 
+def process_molecule_from_database(database_path, start_id, end_id, matching, keep_original, num_conformers, remove_hs):
+    """return tuples of (mol_name, mol) from the database_path"""
+    pass
+    
+    
+
+def get_name_from_database(database_path, start_id, end_id):
+    supplier = Chem.SDMolSupplier(database_path, sanitize=False, removeHs=False)
+    # pdb.set_trace()
+    names = [mol.GetProp('IDNUMBER') for mol in supplier]
+    
+    return names[start_id:end_id]
+
 def read_molecule(molecule_file, sanitize=False, calc_charges=False, remove_hs=False):
     if molecule_file.endswith('.mol2'):
         mol = Chem.MolFromMol2File(molecule_file, sanitize=False, removeHs=False)

@@ -7,35 +7,49 @@ from tqdm import tqdm
 import subprocess
 import time
 import pdb
+from datasets.process_mols import get_name_from_database
 
 parser = ArgumentParser()
-parser.add_argument('--csv_folder', type=str, default="data/crossdock_representative_csv")
+parser.add_argument('--cache_path', type=str, default='experiments/cache/virtual_screening', help='Path to folder where the cache is stored')
+parser.add_argument('--output_folder', type=str, default="results/virtual_screening", help="Path to the output folder for the results")
+parser.add_argument('--mode', type=str, default='virtual_screening', help='Mode of the script, either virtual_screening or crossdock')
+# for crossdock
+parser.add_argument('--csv_folder', type=str, default=None)
 parser.add_argument('--large_csv_file', type=str, default=None)
-parser.add_argument('--output_folder', type=str, default="results/crossdock")
 parser.add_argument('--restart_id', type=int, default=-1)
-
+# for virtual screening
+parser.add_argument('--protein_target_path', type=str, default='data/virtual_screening/7RPZ.pdb', help='Path to the target protein file')
+parser.add_argument('--ligand_in_pocket_path', type=str, default='data/virtual_screening/7RPZ.sdf', help='Path to the ligand in that defines the pocket')
+parser.add_argument('--ligand_database_path', type=str, default='data/virtual_screening/KRAS-CHEMDIV-7W5.sdf', help='Path to the ligand database file (usually sdf) for screening')
+# for parrellel sampling
 parser.add_argument('--num_agents', type=int, default=4)
 parser.add_argument('--complex_per_batch', type=int, default=10)
 parser.add_argument('--samples_per_complex', type=int, default=5)
 parser.add_argument('--batch_size', type=int, default=50)
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
-
+# for model configuration
 parser.add_argument('--model_dir', type=str, default="workdir/ReDock_baseline")
 parser.add_argument('--ckpt_path', type=str, default="best_ema_inference_epoch_model.pt")
 parser.add_argument('--confidence_model_dir', type=str, default='workdir/paper_confidence_model', help='Path to folder with trained confidence model and hyperparameters')
 parser.add_argument('--confidence_ckpt', type=str, default='best_model_epoch75.pt', help='Checkpoint to use for the confidence model')
-parser.add_argument('--cache_path', type=str, default='experiments/cache/crossdock', help='Path to folder where the cache is stored')
-parser.add_argument('--mode', type=str, default='crossdock')
 args = parser.parse_args()
 
 if args.output_folder is not None and not os.path.exists(args.output_folder):
     os.makedirs(args.output_folder)
 
-def run_docking(args, csv, device):
-    target_name = os.path.basename(csv).split(".")[0]
+def run_docking(args, device, csv=None, start=1, end=-1):
+    if csv is None:
+        target_name = os.path.basename(args.ligand_database_path).split(".")[0]
+    else:
+        target_name = os.path.basename(csv).split(".")[0]
     cmd = (
         f'python ReZero_Docking.py '
         f'--protein_ligand_csv {csv} '
+        f'--protein_target_path {args.protein_target_path} '
+        f'--ligand_in_pocket_path {args.ligand_in_pocket_path} '
+        f'--ligand_database_path {args.ligand_database_path} '
+        f'--start_ligand_id {start} '
+        f'--end_ligand_id {end} '
         f'--out_dir {args.output_folder}/{target_name} '
         f'--model_dir {args.model_dir} '
         f'--ckpt {args.ckpt_path} '
@@ -49,8 +63,10 @@ def run_docking(args, csv, device):
         f'--mode {args.mode} '
         f'--cache_path {args.cache_path}'
     )
-
-    log_file = f'{args.output_folder}/logs/{target_name}.log'
+    if csv is not None:
+        log_file = f'{args.output_folder}/logs/{target_name}.log'
+    else:
+        log_file = f'{args.output_folder}/logs/{target_name}_{end}.log'
     # with open(log_file, 'w') as log: 
     # continue to write to the same log file
     with open(log_file, 'a') as log:
@@ -81,9 +97,17 @@ if args.large_csv_file is not None: # for large csv file, split it into small cs
                 f.writelines(lines[i * complex_num_per_file: (i + 1) * complex_num_per_file])
 
     args.csv_folder = csv_folder
-
-csv_id = 0
-csvs = os.listdir(args.csv_folder)[args.restart_id + 1:]
+if args.csv_folder:
+    csv_id = 0
+    csvs = os.listdir(args.csv_folder)[args.restart_id + 1:]
+else: # for database_mode
+    complex_num_per_file = 10000
+    num_ligands = len(get_name_from_database(args.ligand_database_path))
+    interval = num_ligands // complex_num_per_file
+    interval_nodes = range(1, num_ligands, interval)
+    interval_nodes[-1] = -1 # the last node is the end of the database
+    csvs = [None] * interval
+    csv_id = 0
 
 pbar = tqdm(total=len(csvs))
 # initialize processes
@@ -93,9 +117,16 @@ for i in range(args.num_agents):
     if csv_id >= len(csvs):
         break
     device = f"cuda:{i}"
-    csv_path = os.path.join(args.csv_folder, csvs[csv_id])
-    processes.append(run_docking(args, csv_path, device))
-    csv_in_processes.append(csvs[csv_id])
+    if args.csv_folder:
+        csv_path = os.path.join(args.csv_folder, csvs[csv_id])
+    else:
+        csv_path = None
+    # csv_path = os.path.join(args.csv_folder, csvs[csv_id])
+    processes.append(run_docking(args=args, csv=csv_path, device=device, start=interval_nodes[csv_id], end=interval_nodes[csv_id + 1]))
+    if csv_path is not None:
+        csv_in_processes.append(csvs[csv_id])
+    else:
+        csv_in_processes.append((interval_nodes[csv_id], interval_nodes[csv_id + 1]))
     csv_id += 1
     # pbar.update(1)
 
@@ -113,9 +144,15 @@ try:
                     processes[i].wait()
                     print(f"Process {i} with {csv_in_processes[i]} is finished, start a new one")
                     device = f"cuda:{i}"
-                    csv_path = os.path.join(args.csv_folder, csvs[csv_id])
-                    processes[i] = run_docking(args, csv_path, device)
-                    csv_in_processes[i] = csvs[csv_id]
+                    if args.csv_folder:
+                        csv_path = os.path.join(args.csv_folder, csvs[csv_id])
+                    else:
+                        csv_path = None
+                    # csv_path = os.path.join(args.csv_folder, csvs[csv_id])
+                    # processes[i] = run_docking(args, csv_path, device)
+                    processes[i] = run_docking(args=args, csv=csv_path, device=device, start=interval_nodes[csv_id], end=interval_nodes[csv_id + 1])
+                    csv_in_processes[i] = (interval_nodes[csv_id], interval_nodes[csv_id + 1])
+                    # csv_in_processes[i] = csvs[csv_id]
                     csv_id += 1
                     pbar.update(1) # update the progress bar when a process is finished
                 else: # the final num_agents processes are finished

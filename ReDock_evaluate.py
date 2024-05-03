@@ -1,3 +1,8 @@
+"""
+For PDBBind or similar datasets, 
+this script generates docking conformations 
+for a given protein-ligand complex (i.e., flexible redocking).
+"""
 import copy
 import os
 import torch

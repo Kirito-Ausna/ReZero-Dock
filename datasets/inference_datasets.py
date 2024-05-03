@@ -7,7 +7,7 @@ from torch_geometric.data import Dataset, HeteroData
 import esm
 import glob
 from datasets.process_mols import parse_pdb_from_path, generate_conformer, read_molecule, get_lig_graph_with_matching, \
-    extract_receptor_structure, get_rec_graph
+    extract_receptor_structure, get_rec_graph, get_name_from_database, process_molecule_from_database
 from datasets.process_mols import safe_index
 from utils.rotamer import residue_list, atom_name_vocab, get_chi_mask, bb_atom_name, residue_list_expand
 from utils import rotamer
@@ -154,15 +154,25 @@ def generate_ESM_structure(model, filename, sequence):
     return output is not None
 
 class InferenceDatasets(Dataset):
-    def __init__(self, cache_dir, complex_names, protein_files, ligand_descriptions,
+    def __init__(self, cache_dir, complex_names, protein_files, ligand_descriptions, end_ligand_id,
+                 protein_target_path, ligand_in_pocket_path, ligand_database_path, start_ligand_id,
                  protein_sequences, mode, receptor_radius, remove_hs, out_dir, num_workers,
                  c_alpha_max_neighbors=None, all_atoms=True, atom_radius=5, atom_max_neighbors=None):
         super(InferenceDatasets, self).__init__()
         self.cache_dir = cache_dir
+        # for modes except virtual screening, we need to provide the protein and ligand files
         self.complex_names = complex_names
         self.protein_files = protein_files
         self.ligand_descriptions = ligand_descriptions
         self.protein_sequences = protein_sequences
+        # for virtual screening
+        self.protein_target_path = protein_target_path
+        self.ligand_in_pocket_path = ligand_in_pocket_path
+        self.ligand_database_path = ligand_database_path
+        self.start_ligand_id = start_ligand_id
+        self.end_liand_id = end_ligand_id
+        self.ligand_names = get_name_from_database(ligand_database_path, start_ligand_id, end_ligand_id)
+
         self.mode = mode
         self.out_dir = out_dir
 
@@ -174,10 +184,9 @@ class InferenceDatasets(Dataset):
         self.atom_radius = atom_radius
         self.atom_max_neighbors = atom_max_neighbors
 
-        if self.cache_dir is None or self.mode == 'vitual_screening':
-            self.if_cache = False
-        else: self.if_cache = True
-        if self.if_cache: # we save and read esm embeddings from cache
+        self.if_cache = True if self.cache_dir else False
+
+        if self.if_cache and self.mode != 'virtual_screen': # we save and read esm embeddings from cache
             self.target_name = os.path.basename(self.out_dir)
             target_cache_dir = os.path.join(cache_dir, self.target_name)
             if not os.path.exists(target_cache_dir):
@@ -185,13 +194,29 @@ class InferenceDatasets(Dataset):
             self.lig_graph_cache = os.path.join(target_cache_dir, 'rdkit_mols_graph.pt')
             self.rec_graph_cache = os.path.join(target_cache_dir, 'rec_graph.pt')
             self.mol_cache = os.path.join(target_cache_dir, 'mol_dict.pt')
+        
+        if self.if_cache and self.mode == 'virtual_screen':
+            self.target_name = os.path.basename(self.protein_target_path)[:-4]
+            self.database_name = os.path.basename(self.ligand_database_path)[:-4]
+            target_cache_dir = os.path.join(cache_dir, self.target_name)
+            ligand_database_cache_dir = os.path.join(cache_dir, self.database_name)
+            if not os.path.exists(target_cache_dir):
+                os.makedirs(target_cache_dir)
+            if not os.path.exists(ligand_database_cache_dir):
+                os.makedirs(ligand_database_cache_dir)
+            # self.lig_graph_cache = os.path.join(ligand_database_cache_dir, f'rdkit_mols_graph_{self.end_liand_id}.pt')
+            self.lig_graph_cache = os.path.join(ligand_database_cache_dir, f'rdkit_mols_graph.pt')
+            self.rec_graph_cache = os.path.join(target_cache_dir, 'rec_graph.pt')
+            # self.mol_cache = os.path.join(ligand_database_cache_dir, f'mol_dict_{self.end_liand_id}.pt')
+            self.mol_cache = os.path.join(ligand_database_cache_dir, f'mol_dict.pt')
 
         # disentangle the protein and ligand graphs
         self.lig_graph_dict = None
         self.rec_graph_dict = None
-        self.mol_dict = None # for saving the meta data of the molecules 
+        self.mol_dict = None # for saving the rdkit conformation and meta data of the molecules 
 
         # read from cache if available
+        # pdb.set_trace()
         if self.if_cache and os.path.exists(self.rec_graph_cache):
             self.lig_graph_dict = torch.load(self.lig_graph_cache)
             print('loaded ligand graphs from cache')
@@ -203,7 +228,9 @@ class InferenceDatasets(Dataset):
         else:
             self.preprocess() # generate esm embeddings, ligand graphs, receptor graphs mol dict according to the mode
     def len(self):
-        return len(self.complex_names)
+        if self.mode != 'virtual_screen':
+            return len(self.complex_names)
+        return len(self.ligand_names)
     
     def copy_graph(self, src_graph, dst_graph):
         # copy all the node and edge features
@@ -245,15 +272,21 @@ class InferenceDatasets(Dataset):
         # return complex_graph
 
     def get(self, idx):
-        complex_name = self.complex_names[idx]
-        protein_name = complex_name.split('_')[0]
-        ligand_name = complex_name.split('_')[2]
+        if self.mode != 'virtual_screen':
+            complex_name = self.complex_names[idx]
+            protein_name = complex_name.split('_')[0]
+            ligand_name = complex_name.split('_')[2]
+        else:
+            ligand_name = self.ligand_names[idx] # get ligand id for the database
+            protein_name = self.target_name # target is fixed in virtual screening
+            complex_name = protein_name + '_' + ligand_name # create a complex name for the virtual screening and saved folder name     
 
         # bulid the heterograph
         complex_graph = HeteroData()
         complex_graph.name = complex_name
-        complex_graph.prot_path = self.protein_files[idx]
-        complex_graph.lig_path = self.ligand_descriptions[idx]
+        if self.mode != 'virtual_screen': # for saving pokcet results
+            complex_graph.prot_path = self.protein_files[idx]
+            complex_graph.lig_path = self.ligand_descriptions[idx]
 
         # check if exists and add ligand graph
         if ligand_name in self.lig_graph_dict and protein_name in self.rec_graph_dict:
@@ -287,7 +320,7 @@ class InferenceDatasets(Dataset):
         complex_graph['ligand'].pos -= ligand_center
 
         complex_graph.original_center = protein_center
-        complex_graph.mol = self.mol_dict[ligand_name] #NOTE: We need ground truth mol for identifying the pocket
+        complex_graph.mol = self.mol_dict[ligand_name] #NOTE: We need mol for ligand meta information for saving the results
         # complex_graph.mol = read_molecule(self.ligand_descriptions[idx], remove_hs=False, sanitize=True)
         complex_graph['success'] = True
         return complex_graph
@@ -359,10 +392,18 @@ class InferenceDatasets(Dataset):
         protein.sidechain37_mask[:, bb_atom_name] = False
         
     def preprocess(self): #NOTE: Only support protein and liand files as input, protein seq and smiles are supported by ReDock_evalaute.py
-        distinct_protein_paths = list(set(self.protein_files))
-        distinct_ligand_paths = list(set(self.ligand_descriptions))
-        protein_names = [os.path.basename(protein_path).split('_')[0] for protein_path in distinct_protein_paths]
-        ligand_names = [os.path.basename(ligand_path).split('_')[0] for ligand_path in distinct_ligand_paths] 
+        if self.mode != 'virtual_screen':
+            distinct_protein_paths = list(set(self.protein_files))
+            distinct_ligand_paths = list(set(self.ligand_descriptions))
+            protein_names = [os.path.basename(protein_path).split('_')[0] for protein_path in distinct_protein_paths]
+            ligand_names = [os.path.basename(ligand_path).split('_')[0] for ligand_path in distinct_ligand_paths]
+        else:
+            protein_names = [self.target_name]
+            distinct_protein_paths = [self.protein_target_path]
+            distinct_ligand_paths = [self.ligand_in_pocket_path]
+            ligand_names = self.ligand_names
+            
+
         # generate esm embeddings
         lm_embeddings_chains_all = {}
         if self.cache_dir:
@@ -400,22 +441,38 @@ class InferenceDatasets(Dataset):
         mol_dict = {}
         if self.cache_dir:
             rdkit_mol_path = os.path.join(self.cache_dir, 'rdkit_mols')
-        if self.cache_dir and os.path.exists(rdkit_mol_path):
+        if self.cache_dir and os.path.exists(rdkit_mol_path): #NOTE: We encourage to generate rdkit conformers in advance
             print('loading rdkit mols from', rdkit_mol_path)
             for ligand_name in ligand_names:
-                mol_dict[ligand_name] = read_molecule(os.path.join(rdkit_mol_path, ligand_name + '.sdf'), 
+                try:
+                    mol_dict[ligand_name] = read_molecule(os.path.join(rdkit_mol_path, ligand_name + '.sdf'), 
                                                       remove_hs=False, sanitize=True)
+                except Exception as e:
+                    print('error loading rdkit mol for', ligand_name)
+                    print(e)
+                    mol_dict[ligand_name] = None # will be skipped in ligand graph generation
         else:
             print("Generating rdkit mols")
-            for i, ligand_description in enumerate(distinct_ligand_paths):
-                mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
-                if mol is None:
-                    print('None mol for', ligand_description)
-                    continue
-                mol.RemoveAllConformers()
-                mol = AddHs(mol)
-                generate_conformer(mol)
-                mol_dict[ligand_names[i]] = mol
+            if self.mode != 'virtual_screen':
+                for i, ligand_description in enumerate(distinct_ligand_paths):
+                    mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
+                    if mol is None:
+                        print('None mol for', ligand_description)
+                        mol_dict[ligand_names[i]] = None
+                        continue
+                    try:
+                        mol.RemoveAllConformers()
+                        mol = AddHs(mol)
+                        generate_conformer(mol)
+                        mol_dict[ligand_names[i]] = mol
+                    except:
+                        print('rdkit conformer generation failed for', ligand_names[i])
+                        mol_dict[ligand_names[i]] = None
+            else: #TODO: support parralel rdkit conformer generation in preprocess
+                database_mols = process_molecule_from_database(self.ligand_database_path, self.start_ligand_id)
+                for ligand_name, rdkit_mol in database_mols:
+                    mol_dict[ligand_name] = rdkit_mol
+
         if self.if_cache:
             torch.save(mol_dict, self.mol_cache)
             print('saved mol dict to', self.mol_cache)
@@ -425,6 +482,9 @@ class InferenceDatasets(Dataset):
         print('Generating ligand graphs')
         for lig_name in ligand_names:
             lig_graph = HeteroData()
+            if mol_dict[lig_name] is None:
+                print('rdkit conf unfound, skipping ligand graph generation for', lig_name)
+                continue
             try:
                 get_lig_graph_with_matching(mol_dict[lig_name], lig_graph, popsize=None, maxiter=None, matching=False, keep_original=False,
                                         num_conformers=1, remove_hs=self.remove_hs)
