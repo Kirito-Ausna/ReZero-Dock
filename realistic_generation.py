@@ -27,6 +27,7 @@ parser.add_argument('--complex_per_batch', type=int, default=10)
 parser.add_argument('--samples_per_complex', type=int, default=5)
 parser.add_argument('--batch_size', type=int, default=50)
 parser.add_argument('--num_workers', type=int, default=32, help='Number of workers for preprocessing')
+parser.add_argument('--complex_num_per_process', type=int, default=10000)
 # for model configuration
 parser.add_argument('--model_dir', type=str, default="workdir/ReDock_baseline")
 parser.add_argument('--ckpt_path', type=str, default="best_ema_inference_epoch_model.pt")
@@ -80,7 +81,7 @@ def run_docking(args, device, csv=None, start=1, end=-1):
 if args.large_csv_file is not None: # for large csv file, split it into small csv files
 # split the large csv file into small csv files
     target_name = os.path.basename(args.large_csv_file).split(".")[0]
-    complex_num_per_file = 10000
+    complex_num_per_file = args.complex_num_per_process
     csv_folder = os.path.join(args.csv_folder, target_name)
     if not os.path.exists(csv_folder):
         os.makedirs(csv_folder)
@@ -103,7 +104,7 @@ if args.csv_folder:
     csv_id = 0
     csvs = os.listdir(args.csv_folder)[args.restart_id + 1:]
 else: # for database_mode
-    complex_num_per_file = 10000
+    complex_num_per_file = args.complex_num_per_process
     num_ligands = len(get_name_from_database(args.ligand_database_path))
     interval_num = num_ligands // complex_num_per_file
     interval_nodes = list(range(0, num_ligands, complex_num_per_file))
