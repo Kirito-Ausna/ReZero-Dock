@@ -523,10 +523,13 @@ def process_molecule_from_database(database_path, start_id, end_id, matching, ke
     
     
 
-def get_name_from_database(database_path, start_id, end_id):
+def get_name_from_database(database_path, start_id=0, end_id=-1):
     supplier = Chem.SDMolSupplier(database_path, sanitize=False, removeHs=False)
+
+    mols = [mol for mol in supplier][1:]
+
+    names = [mol.GetProp('IDNUMBER').replace('/', '_') for mol in mols]
     # pdb.set_trace()
-    names = [mol.GetProp('IDNUMBER') for mol in supplier]
     
     return names[start_id:end_id]
 

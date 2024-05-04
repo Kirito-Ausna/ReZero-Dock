@@ -12,7 +12,7 @@ from datasets.process_mols import get_name_from_database
 parser = ArgumentParser()
 parser.add_argument('--cache_path', type=str, default='experiments/cache/virtual_screening', help='Path to folder where the cache is stored')
 parser.add_argument('--output_folder', type=str, default="results/virtual_screening", help="Path to the output folder for the results")
-parser.add_argument('--mode', type=str, default='virtual_screening', help='Mode of the script, either virtual_screening or crossdock')
+parser.add_argument('--mode', type=str, default='virtual_screen', help='Mode of the script, either virtual_screening or crossdock')
 # for crossdock
 parser.add_argument('--csv_folder', type=str, default=None)
 parser.add_argument('--large_csv_file', type=str, default=None)
@@ -22,7 +22,7 @@ parser.add_argument('--protein_target_path', type=str, default='data/virtual_scr
 parser.add_argument('--ligand_in_pocket_path', type=str, default='data/virtual_screening/7RPZ.sdf', help='Path to the ligand in that defines the pocket')
 parser.add_argument('--ligand_database_path', type=str, default='data/virtual_screening/KRAS-CHEMDIV-7W5.sdf', help='Path to the ligand database file (usually sdf) for screening')
 # for parrellel sampling
-parser.add_argument('--num_agents', type=int, default=4)
+parser.add_argument('--num_agents', type=int, default=2)
 parser.add_argument('--complex_per_batch', type=int, default=10)
 parser.add_argument('--samples_per_complex', type=int, default=5)
 parser.add_argument('--batch_size', type=int, default=50)
@@ -36,6 +36,8 @@ args = parser.parse_args()
 
 if args.output_folder is not None and not os.path.exists(args.output_folder):
     os.makedirs(args.output_folder)
+if not os.path.exists(f'{args.output_folder}/logs'):
+    os.makedirs(f'{args.output_folder}/logs')
 
 def run_docking(args, device, csv=None, start=1, end=-1):
     if csv is None:
@@ -103,10 +105,11 @@ if args.csv_folder:
 else: # for database_mode
     complex_num_per_file = 10000
     num_ligands = len(get_name_from_database(args.ligand_database_path))
-    interval = num_ligands // complex_num_per_file
-    interval_nodes = range(1, num_ligands, interval)
+    interval_num = num_ligands // complex_num_per_file
+    interval_nodes = list(range(0, num_ligands, complex_num_per_file))
+    # pdb.set_trace()
     interval_nodes[-1] = -1 # the last node is the end of the database
-    csvs = [None] * interval
+    csvs = [None] * interval_num
     csv_id = 0
 
 pbar = tqdm(total=len(csvs))
@@ -121,6 +124,7 @@ for i in range(args.num_agents):
         csv_path = os.path.join(args.csv_folder, csvs[csv_id])
     else:
         csv_path = None
+    # pdb.set_trace()
     # csv_path = os.path.join(args.csv_folder, csvs[csv_id])
     processes.append(run_docking(args=args, csv=csv_path, device=device, start=interval_nodes[csv_id], end=interval_nodes[csv_id + 1]))
     if csv_path is not None:

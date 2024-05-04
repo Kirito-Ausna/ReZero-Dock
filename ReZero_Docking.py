@@ -27,11 +27,15 @@ import pdb
 RDLogger.DisableLog('rdApp.*')
 import yaml
 parser = ArgumentParser()
+def none_or_str(value):
+    if value == 'None':
+        return None
+    return value
 # Inference mode
 parser.add_argument('--mode', type=str, default='virtual_screen', help='Inferece mode, [crossdock, redocking, apodock. virtual_screen]')
 parser.add_argument('--cache_path', type=str, default=None, help='Path to folder where the cache are stored')
 # For interface for various settings except virtual_screen
-parser.add_argument('--protein_ligand_csv', type=str, default=None, help='Path to a .csv file specifying the input as described in the README. If this is not None, it will be used instead of the --protein_path, --protein_sequence and --ligand parameters')
+parser.add_argument('--protein_ligand_csv', type=none_or_str, default=None, help='Path to a .csv file specifying the input as described in the README. If this is not None, it will be used instead of the --protein_path, --protein_sequence and --ligand parameters')
 # demo or one sample only
 parser.add_argument('--protein_path', type=str, default=None, help='Path to the protein file')
 parser.add_argument('--protein_sequence', type=str, default=None, help='Sequence of the protein for ESMFold, this is ignored if --protein_path is not None')
@@ -41,7 +45,7 @@ parser.add_argument('--complex_name', type=str, default='1a0q', help='Name that 
 parser.add_argument('--protein_target_path', type=str, default=None, help='Path to the target protein file')
 parser.add_argument('--ligand_in_pocket_path', type=str, default=None, help='Path to the ligand in that defines the pocket')
 parser.add_argument('--ligand_database_path', type=str, default=None, help='Path to the ligand database file (usually sdf) for screening')
-parser.add_argument('--start_ligand_id', type=int, default=1, help='The ligand id in the database to start virtual screening from, 1 is the first, not 0')
+parser.add_argument('--start_ligand_id', type=int, default=0, help='The ligand id in the database to start virtual screening from')
 parser.add_argument('--end_ligand_id', type=int, default=-1, help='The ligand id in the database to end virtual screening at')
 # save the results
 parser.add_argument('--out_dir', type=str, default='results/user_inference', help='Directory where the outputs will be written to')
@@ -82,6 +86,8 @@ complex_name_list, protein_path_list, protein_sequence_list, ligand_description_
 protein_target_path, ligand_in_pocket_path, ligand_database_path = None, None, None
 
 if args.protein_ligand_csv is not None: # crossdocking or redocking
+    # print(args.protein_ligand_csv)
+    # pdb.set_trace()
     df = pd.read_csv(args.protein_ligand_csv)
     complex_name_list = set_nones(df['complex_name'].tolist())
     protein_path_list = set_nones(df['protein_path'].tolist())
