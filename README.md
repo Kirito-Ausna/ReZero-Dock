@@ -1,4 +1,4 @@
-# ReZeroDock: Realistic and flexible protein ligand Docking from zero
+# ReZeroDock: Realistic and flexible protein ligand docking from Zero
 
 ### [Paper on arXiv](https://arxiv.org/pdf/2402.11459)
 
@@ -132,5 +132,14 @@ Note: the notebook `data/apo_alignment.ipynb` contains the code used to align th
 ## License
 MIT
 
+## Citation
+If you use this code or the data, please cite the following paper:
 
-![Alt Text](visualizations/example_6agt_symmetric.gif)
+```
+@article{huang2024re,
+  title={Re-dock: towards flexible and realistic molecular docking with diffusion bridge},
+  author={Huang, Yufei and Zhang, Odin and Wu, Lirong and Tan, Cheng and Lin, Haitao and Gao, Zhangyang and Li, Siyuan and Li, Stan and others},
+  journal={arXiv preprint arXiv:2402.11459},
+  year={2024}
+}
+```
