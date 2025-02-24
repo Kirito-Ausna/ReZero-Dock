@@ -75,12 +75,16 @@ class ModifiedPDB:
     def to_pdb(self, out_path, pocket_only=False):
         sc_atom_idx = 0
         updated_atoms = {}
-        
+        skipped_atoms = []
         for atom in self.rec.get_atoms():
             if atom.name not in atom_name_vocab:
+                skipped_atoms.append(atom)
                 continue
             if pocket_only:
-                atom.set_coord(self.pocket_pos[sc_atom_idx])
+                try:
+                    atom.set_coord(self.pocket_pos[sc_atom_idx])
+                except:
+                    pdb.set_trace()
             else:
                 updated_atoms[atom] = self.pocket_pos[sc_atom_idx]
             sc_atom_idx += 1

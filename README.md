@@ -1,10 +1,10 @@
-# ReDock: Realistic and flexible protein ligand Docking
+# ReZeroDock: Realistic and flexible protein ligand Docking from zero
 
-### [Paper on arXiv](https://arxiv.org/abs/2210.01776)
+### [Paper on arXiv](https://arxiv.org/pdf/2402.11459)
 
 The repository also contains all the scripts to run the baselines and generate the figures.
 Additionally, there are visualization videos in `visualizations`.
-
+### This repository is under construction and will be updated frequently.
 # Dataset
 
 The files in `data` contain the names for the time-based data split.

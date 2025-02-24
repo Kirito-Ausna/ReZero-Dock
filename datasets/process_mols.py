@@ -262,7 +262,7 @@ def extract_receptor_structure(rec, lig, lm_embedding_chains=None, pocket_cutoff
     return rec, coords, c_alpha_coords, n_coords, c_coords, lm_embeddings
 
 def extract_inference_pocket(rec, lig, lm_embedding_chains=None, pocket_cutoff=8, pocket_center=None, flexible_sidechains=None):
-    
+    #TODO: Support various pocket identification methods
     pass
 
 

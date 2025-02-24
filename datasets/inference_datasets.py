@@ -160,20 +160,21 @@ class InferenceDatasets(Dataset):
                  c_alpha_max_neighbors=None, all_atoms=True, atom_radius=5, atom_max_neighbors=None):
         super(InferenceDatasets, self).__init__()
         self.cache_dir = cache_dir
+        self.mode = mode
         # for modes except virtual screening, we need to provide the protein and ligand files
         self.complex_names = complex_names
         self.protein_files = protein_files
         self.ligand_descriptions = ligand_descriptions
         self.protein_sequences = protein_sequences
         # for virtual screening
-        self.protein_target_path = protein_target_path
-        self.ligand_in_pocket_path = ligand_in_pocket_path
-        self.ligand_database_path = ligand_database_path
-        self.start_ligand_id = start_ligand_id
-        self.end_liand_id = end_ligand_id
-        self.ligand_names = get_name_from_database(ligand_database_path, start_ligand_id, end_ligand_id)
+        if self.mode == 'virtual_screen':
+            self.protein_target_path = protein_target_path
+            self.ligand_in_pocket_path = ligand_in_pocket_path
+            self.ligand_database_path = ligand_database_path
+            self.start_ligand_id = start_ligand_id
+            self.end_liand_id = end_ligand_id
+            self.ligand_names = get_name_from_database(ligand_database_path, start_ligand_id, end_ligand_id)
 
-        self.mode = mode
         self.out_dir = out_dir
 
         self.num_workers = num_workers
@@ -232,6 +233,7 @@ class InferenceDatasets(Dataset):
         # generate LM embeddings and cache them, organize them by protein name
         if loaded < 2:
             self.preprocess() # generate esm embeddings, ligand graphs, receptor graphs mol dict according to the mode
+
     def len(self):
         if self.mode != 'virtual_screen':
             return len(self.complex_names)
@@ -277,15 +279,20 @@ class InferenceDatasets(Dataset):
         # return complex_graph
 
     def get(self, idx):
-        if self.mode != 'virtual_screen':
+        if self.mode == 'crossdock':
             complex_name = self.complex_names[idx]
             protein_name = complex_name.split('_')[0]
             ligand_name = complex_name.split('_')[2]
-        else:
+        elif self.mode == 'virtual_screen':
             ligand_name = self.ligand_names[idx] # get ligand id for the database
             protein_name = self.target_name # target is fixed in virtual screening
             complex_name = protein_name + '_' + ligand_name # create a complex name for the virtual screening and saved folder name     
-
+        elif self.mode == 'apodock':
+            complex_name = self.complex_names[idx]
+            # get the protein name form self.protein_files #TODO: unifed protein name and ligand name parser. Currenly, we need to strictly follow the naming rule of the dataset.
+            protein_name = os.path.basename(self.protein_files[idx]).split('_')[0]
+            ligand_name = complex_name+'.sdf'
+            ligand_name = ligand_name.split('_')[0]
         # bulid the heterograph
         complex_graph = HeteroData()
         complex_graph.name = complex_name
@@ -303,6 +310,7 @@ class InferenceDatasets(Dataset):
         else:
             print('ligand or receptor graph not found for', complex_name)
             complex_graph['success'] = False
+            # pdb.set_trace()
             return complex_graph
 
         # check if exists and add receptor graph
