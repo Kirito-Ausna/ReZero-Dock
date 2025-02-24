@@ -1,4 +1,4 @@
-# ReZeroDock: Realistic and flexible protein ligand docking from Zero
+# ReZero-Dock: Realistic and flexible protein ligand docking from Zero
 
 ### [Paper on arXiv](https://arxiv.org/abs/2402.11459)
 ### This repository is under construction and will be updated frequently.
