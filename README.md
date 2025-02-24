@@ -1,10 +1,8 @@
 # ReZeroDock: Realistic and flexible protein ligand docking from Zero
 
-### [Paper on arXiv](https://arxiv.org/pdf/2402.11459)
-
-The repository also contains all the scripts to run the baselines and generate the figures.
-Additionally, there are visualization videos in `visualizations`.
+### [Paper on arXiv](https://arxiv.org/abs/2402.11459)
 ### This repository is under construction and will be updated frequently.
+
 # Dataset
 
 The files in `data` contain the names for the time-based data split.
