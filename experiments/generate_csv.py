@@ -2,10 +2,10 @@ import os
 import pandas as pd
 
 # Directories
-ligand_dir = "data/IL-17-data/9FL3/DiffBP_9FL3"
+ligand_dir = "data/IL-17-data/9FL3/SYNC_9FL3"
 protein_dir = "data/IL-17-data/Target_9FL3"
 # Save to CSV
-output_file = "data/IL-17-data/CSVs/9FL3-DiffBP.csv"
+output_file = "data/IL-17-data/CSVs/9FL3-SYNC.csv"
 
 # Get the list of molecule files in the ligand directory
 ligand_files = [f for f in os.listdir(ligand_dir) if f.endswith('.sdf')]
