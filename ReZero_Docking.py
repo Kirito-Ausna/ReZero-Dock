@@ -111,9 +111,9 @@ if args.mode != 'virtual_screen':
     for i, name in enumerate(complex_name_list):
         if name is None:
             complex_name_list[i] = f'complex_{i}'
-        elif isinstance(name, int): # rename number to pdbid
-            # get dirname of path, then get the last folder name
-            complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
+        # elif isinstance(name, int): # rename number to pdbid
+        #     # get dirname of path, then get the last folder name
+        #     complex_name_list[i] = os.path.split(os.path.dirname(protein_path_list[i]))[1]
     # pdb.set_trace()
     # holo_ligand_path = {}
     for name in complex_name_list:

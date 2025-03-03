@@ -2,11 +2,11 @@ import os
 import pandas as pd
 
 # Directories
-ligand_dir = "data/IL-17-data/SYNC"
+ligand_dir = "data/IL-17-data/9FL3/DiffBP_9FL3"
+protein_dir = "data/IL-17-data/Target_9FL3"
 # Save to CSV
-output_file = "data/IL-17-data/IL-17-SYNC.csv"
+output_file = "data/IL-17-data/CSVs/9FL3-DiffBP.csv"
 
-protein_dir = "data/IL-17-data/Target/"
 # Get the list of molecule files in the ligand directory
 ligand_files = [f for f in os.listdir(ligand_dir) if f.endswith('.sdf')]
 
@@ -33,7 +33,7 @@ for ligand_file in ligand_files:
     data.append([complex_name, ligand_path, protein_path])
 
 # add additional rows with target protein and its crystal ligand for pocket detection
-data.append([protein_name, "data/IL-17-data/Target/8DYG_LIG.sdf", protein_path])
+# data.append([protein_name, "data/IL-17-data/Target_8DYG/8DYG_LIG.sdf", protein_path])
 
 # Create a DataFrame
 df = pd.DataFrame(data, columns=["complex_name", "ligand_description", "protein_path"])

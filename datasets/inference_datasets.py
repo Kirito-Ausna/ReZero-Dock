@@ -289,10 +289,12 @@ class InferenceDatasets(Dataset):
             complex_name = protein_name + '_' + ligand_name # create a complex name for the virtual screening and saved folder name     
         elif self.mode == 'apodock':
             complex_name = self.complex_names[idx]
+            # convert complex_name to string type
+            complex_name = str(complex_name)
             # get the protein name form self.protein_files #TODO: unifed protein name and ligand name parser. Currenly, we need to strictly follow the naming rule of the dataset.
             protein_name = os.path.basename(self.protein_files[idx]).split('_')[0]
             ligand_name = complex_name+'.sdf'
-            ligand_name = ligand_name.split('_')[0]
+            # ligand_name = ligand_name.split('_')[0]
         # bulid the heterograph
         complex_graph = HeteroData()
         complex_graph.name = complex_name
@@ -522,12 +524,15 @@ class InferenceDatasets(Dataset):
             print('Generating receptor graphs')
             for i, protein_name in enumerate(protein_names):
                 # pdb.set_trace()
+                protein_path = distinct_protein_paths[i]
                 rec_graph = HeteroData()
                 rec_model = parse_pdb_from_path(distinct_protein_paths[i])
                 # find the corresponding ligand in holo structure according to the protein name
-                for ligand_description in distinct_ligand_paths:
-                    if protein_name in ligand_description:
-                        break
+                # for ligand_description in distinct_ligand_paths:
+                #     if protein_name in ligand_description:
+                #         break
+                holo_ligand_name = os.path.basename(protein_path).split('.')[0].replace('PRO', 'LIG')
+                ligand_description = os.path.join(os.path.dirname(protein_path), holo_ligand_name+'.sdf')
                 true_mol = read_molecule(ligand_description, remove_hs=False, sanitize=True)
                 # if self.mode != 'virtual_screen': # protein and ligand share the same key
                 try: #NOTE: the pocket information is based on known binding ligand

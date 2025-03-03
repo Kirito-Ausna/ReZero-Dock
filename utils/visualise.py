@@ -88,8 +88,10 @@ class ModifiedPDB:
             else:
                 updated_atoms[atom] = self.pocket_pos[sc_atom_idx]
             sc_atom_idx += 1
-        
-        assert sc_atom_idx == len(self.pocket_pos), 'Not all sidechain atoms are updated, index may be mismatched.'
+        try:
+            assert sc_atom_idx == len(self.pocket_pos), 'Not all sidechain atoms are updated, index may be mismatched.'
+        except:
+            pdb.set_trace()
         # write to pdb file
         wirter = PDBIO()
         if pocket_only:
